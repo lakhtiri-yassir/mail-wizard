@@ -32,6 +32,19 @@ app.get('/health', async (req, res) => {
 import campaignRoutes from './routes/campaigns';
 app.use('/api/campaigns', campaignRoutes);
 
+// Admin routes
+import adminAuthRoutes from './routes/admin/auth';
+import adminDashboardRoutes from './routes/admin/dashboard';
+import adminUsersRoutes from './routes/admin/users';
+import adminSystemRoutes from './routes/admin/system';
+
+app.use('/api/admin/auth', adminAuthRoutes);
+app.use('/api/admin/dashboard', adminDashboardRoutes);
+app.use('/api/admin/users', adminUsersRoutes);
+app.use('/api/admin/system', adminSystemRoutes);
+
+console.log('✅ Admin routes registered');
+
 // Start BullMQ worker
 const worker = startEmailWorker();
 

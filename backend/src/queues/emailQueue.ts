@@ -26,17 +26,13 @@ export const emailQueue = new Queue<EmailJobData>('email-sending', {
   defaultJobOptions: {
     ...defaultQueueOptions.defaultJobOptions,
     priority: 1,
-    limiter: {
-      max: 10,
-      duration: 1000,
-    },
   },
 });
 
 // Add job to queue
 export async function queueEmailCampaign(data: EmailJobData) {
   const job = await emailQueue.add(
-    'send-campaign',
+    'send-campaign' as any,
     data,
     {
       jobId: `campaign-${data.campaignId}-${Date.now()}`,
