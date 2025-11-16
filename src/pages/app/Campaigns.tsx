@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Mail, Plus, Send } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { AppLayout } from '../../components/app/AppLayout';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -41,8 +42,9 @@ export const Campaigns = () => {
 
       if (error) throw error;
       setCampaigns(data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching campaigns:', error);
+      toast.error(error.message || 'Failed to load campaigns');
     } finally {
       setLoading(false);
     }
@@ -57,11 +59,15 @@ export const Campaigns = () => {
     if (!confirm('Are you sure you want to send this campaign to all contacts?')) return;
 
     setSending(campaignId);
+    const toastId = toast.loading('Preparing to send campaign...');
 
     try {
       const campaign = campaigns.find(c => c.id === campaignId);
-      if (!campaign) throw new Error('Campaign not found');
+      if (!campaign) {
+        throw new Error('Campaign not found');
+      }
 
+      toast.loading('Fetching contacts...', { id: toastId });
       const { data: contacts, error: contactsError } = await supabase
         .from('contacts')
         .select('id, email, first_name, last_name')
@@ -70,12 +76,15 @@ export const Campaigns = () => {
       if (contactsError) throw contactsError;
 
       if (!contacts || contacts.length === 0) {
-        alert('No active contacts found');
+        toast.error('No active contacts found', { id: toastId });
         return;
       }
 
+      toast.loading(`Sending to ${contacts.length} recipients...`, { id: toastId });
       const { data: session } = await supabase.auth.getSession();
-      if (!session?.session?.access_token) throw new Error('Not authenticated');
+      if (!session?.session?.access_token) {
+        throw new Error('Not authenticated');
+      }
 
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-email`;
 
@@ -104,16 +113,19 @@ export const Campaigns = () => {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Failed to send campaign');
+        if (response.status === 429) {
+          throw new Error('Rate limit exceeded. Please try again in a few minutes.');
+        }
+        throw new Error(error.message || error.error || 'Failed to send campaign');
       }
 
       const data = await response.json();
       await fetchCampaigns();
 
-      alert(`Campaign sent to ${data.sent} recipients!`);
+      toast.success(`Campaign sent to ${data.sent} recipients!`, { id: toastId });
     } catch (error: any) {
       console.error('Send error:', error);
-      alert(error.message || 'Failed to send campaign');
+      toast.error(error.message || 'Failed to send campaign', { id: toastId });
     } finally {
       setSending(null);
     }

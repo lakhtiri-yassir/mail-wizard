@@ -54,6 +54,37 @@ Deno.serve(async (req: Request) => {
       throw new Error('Unauthorized');
     }
 
+    // Check rate limit
+    const { data: rateLimitResult } = await supabase.rpc('check_rate_limit', {
+      p_user_id: user.id,
+      p_endpoint: 'send-email',
+      p_max_requests: 10,
+      p_window_minutes: 60
+    });
+
+    if (rateLimitResult && !rateLimitResult.allowed) {
+      return new Response(
+        JSON.stringify({
+          error: 'Rate limit exceeded',
+          message: 'Too many send requests. Please try again later.',
+          limit: rateLimitResult.limit,
+          current: rateLimitResult.current_count,
+          reset_at: rateLimitResult.reset_at
+        }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': String(rateLimitResult.limit),
+            'X-RateLimit-Remaining': String(rateLimitResult.remaining),
+            'X-RateLimit-Reset': rateLimitResult.reset_at,
+            'Retry-After': String(60 * 60)
+          }
+        }
+      );
+    }
+
     const requestData: SendEmailRequest = await req.json();
     const {
       campaign_id,
@@ -140,30 +171,66 @@ Deno.serve(async (req: Request) => {
         };
       });
 
-      const sendGridResponse = await fetch('https://api.sendgrid.com/v3/mail/send', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${SENDGRID_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          personalizations,
-          from: { email: from_email, name: from_name },
-          content: [
-            { type: 'text/html', value: html_body },
-            { type: 'text/plain', value: text_body || html_body.replace(/<[^>]*>/g, '') }
-          ],
-          tracking_settings: {
-            click_tracking: { enable: track_clicks },
-            open_tracking: { enable: track_opens }
-          }
-        })
-      });
+      let sendGridResponse: Response | null = null;
+      let retryCount = 0;
+      const maxRetries = 3;
+      const retryDelay = 1000;
 
-      if (!sendGridResponse.ok) {
-        const error = await sendGridResponse.text();
-        console.error('SendGrid error:', error);
-        failedRecipients.push(...batch.map(r => r.email));
+      while (retryCount <= maxRetries) {
+        try {
+          sendGridResponse = await fetch('https://api.sendgrid.com/v3/mail/send', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${SENDGRID_API_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              personalizations,
+              from: { email: from_email, name: from_name },
+              content: [
+                { type: 'text/html', value: html_body },
+                { type: 'text/plain', value: text_body || html_body.replace(/<[^>]*>/g, '') }
+              ],
+              tracking_settings: {
+                click_tracking: { enable: track_clicks },
+                open_tracking: { enable: track_opens }
+              }
+            })
+          });
+
+          if (sendGridResponse.ok) {
+            break;
+          }
+
+          if (sendGridResponse.status === 429 || sendGridResponse.status >= 500) {
+            retryCount++;
+            if (retryCount <= maxRetries) {
+              const delay = retryDelay * Math.pow(2, retryCount - 1);
+              console.log(`Retry ${retryCount}/${maxRetries} after ${delay}ms`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+          }
+
+          const error = await sendGridResponse.text();
+          console.error('SendGrid error:', error);
+          failedRecipients.push(...batch.map(r => r.email));
+          break;
+        } catch (error) {
+          retryCount++;
+          if (retryCount <= maxRetries) {
+            const delay = retryDelay * Math.pow(2, retryCount - 1);
+            console.log(`Network error, retry ${retryCount}/${maxRetries} after ${delay}ms`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          console.error('SendGrid network error:', error);
+          failedRecipients.push(...batch.map(r => r.email));
+          break;
+        }
+      }
+
+      if (!sendGridResponse || !sendGridResponse.ok) {
         continue;
       }
 
