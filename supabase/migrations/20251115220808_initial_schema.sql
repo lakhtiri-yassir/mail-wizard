@@ -120,7 +120,6 @@ CREATE TABLE IF NOT EXISTS profiles (
   stripe_customer_id text,
   stripe_subscription_id text,
   subscription_status text DEFAULT 'active',
-  is_admin boolean DEFAULT false,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -143,15 +142,8 @@ CREATE POLICY "Users can insert own profile"
   TO authenticated
   WITH CHECK (auth.uid() = id);
 
-CREATE POLICY "Admins can view all profiles"
-  ON profiles FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles p
-      WHERE p.id = auth.uid() AND p.is_admin = true
-    )
-  );
+-- NOTE: Admin access to all profiles is handled via separate admin_users table
+-- See migration: 20251116205910_add_admin_dashboard.sql
 
 -- Contacts table
 CREATE TABLE IF NOT EXISTS contacts (
@@ -516,15 +508,8 @@ CREATE POLICY "Users can view own usage metrics"
   TO authenticated
   USING (auth.uid() = user_id);
 
-CREATE POLICY "Admins can view all usage metrics"
-  ON usage_metrics FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid() AND profiles.is_admin = true
-    )
-  );
+-- NOTE: Admin access to usage metrics is handled via admin_users table
+-- Admin queries should use service role key, not user authentication
 
 -- Invoices table
 CREATE TABLE IF NOT EXISTS invoices (
