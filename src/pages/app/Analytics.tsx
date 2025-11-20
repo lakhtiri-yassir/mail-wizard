@@ -540,12 +540,6 @@ export const Analytics = () => {
 };
 
 export default Analytics;
-import { BarChart3 } from "lucide-react";
-import { AppLayout } from "../../components/app/AppLayout";
-
-export const Analytics = () => {
-  return (
-    <AppLayout currentPath="/app/analytics">
       <div className="p-8">
         <div className="mb-8">
           <h1 className="text-3xl font-serif font-bold mb-2">Analytics</h1>
