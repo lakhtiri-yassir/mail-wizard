@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Mail, Plus, Send } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '../../components/app/AppLayout';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
