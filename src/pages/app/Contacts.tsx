@@ -108,19 +108,16 @@ export const Contacts = () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('contacts')
-        .select(`
-          *,
-          contact_group_members!inner(group_id)
-        `)
-        .eq('user_id', user.id)
-        .eq('contact_group_members.group_id', groupId)
-        .order('created_at', { ascending: false });
+        .from('contact_group_members')
+        .select('contact_id, contacts(*)')
+        .eq('group_id', groupId);
       
       if (error) throw error;
-      setContacts(data || []);
+      
+      const groupContacts = data?.map(item => item.contacts).filter(Boolean) as Contact[];
+      setContacts(groupContacts || []);
     } catch (error) {
-      console.error('Error fetching contacts in group:', error);
+      console.error('Error fetching group contacts:', error);
       toast.error('Failed to load contacts');
     } finally {
       setLoading(false);
@@ -129,7 +126,7 @@ export const Contacts = () => {
 
   const handleDeleteContact = async (contactId: string) => {
     if (!confirm('Are you sure you want to delete this contact?')) return;
-
+    
     try {
       const { error } = await supabase
         .from('contacts')
@@ -139,17 +136,15 @@ export const Contacts = () => {
       if (error) throw error;
       
       toast.success('Contact deleted successfully');
-      
-      // Refresh data
       if (selectedGroupId) {
         fetchContactsInGroup(selectedGroupId);
       } else {
         fetchContacts();
       }
-      fetchGroups(); // Update group counts
-    } catch (error: any) {
+      fetchGroups(); // Refresh group counts
+    } catch (error) {
       console.error('Error deleting contact:', error);
-      toast.error(error.message || 'Failed to delete contact');
+      toast.error('Failed to delete contact');
     }
   };
 
@@ -157,7 +152,7 @@ export const Contacts = () => {
     if (selectedContacts.size === 0) return;
     
     if (!confirm(`Are you sure you want to delete ${selectedContacts.size} contact(s)?`)) return;
-
+    
     try {
       const { error } = await supabase
         .from('contacts')
@@ -166,207 +161,175 @@ export const Contacts = () => {
       
       if (error) throw error;
       
-      toast.success(`${selectedContacts.size} contact(s) deleted successfully`);
+      toast.success(`Deleted ${selectedContacts.size} contact(s)`);
       setSelectedContacts(new Set());
-      
-      // Refresh data
       if (selectedGroupId) {
         fetchContactsInGroup(selectedGroupId);
       } else {
         fetchContacts();
       }
-      fetchGroups(); // Update group counts
-    } catch (error: any) {
-      console.error('Error deleting contacts:', error);
-      toast.error(error.message || 'Failed to delete contacts');
+      fetchGroups();
+    } catch (error) {
+      console.error('Error bulk deleting:', error);
+      toast.error('Failed to delete contacts');
     }
   };
 
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedContacts(new Set(filteredContacts.map(c => c.id)));
-    } else {
-      setSelectedContacts(new Set());
-    }
-  };
-
-  const handleSelectContact = (contactId: string, checked: boolean) => {
+  const handleContactCheckbox = (contactId: string) => {
     const newSelected = new Set(selectedContacts);
-    if (checked) {
-      newSelected.add(contactId);
-    } else {
+    if (newSelected.has(contactId)) {
       newSelected.delete(contactId);
+    } else {
+      newSelected.add(contactId);
     }
     setSelectedContacts(newSelected);
   };
 
-  const handleGroupSelect = (groupId: string | null) => {
-    setSelectedGroupId(groupId);
-    setSelectedContacts(new Set());
-    setSearchQuery('');
+  const handleSelectAll = () => {
+    if (selectedContacts.size === filteredContacts.length) {
+      setSelectedContacts(new Set());
+    } else {
+      setSelectedContacts(new Set(filteredContacts.map(c => c.id)));
+    }
   };
 
-  // Filter contacts based on search
   const filteredContacts = contacts.filter(contact => {
-    if (!searchQuery) return true;
-    
-    const query = searchQuery.toLowerCase();
+    const searchLower = searchQuery.toLowerCase();
     return (
-      contact.email?.toLowerCase().includes(query) ||
-      contact.first_name?.toLowerCase().includes(query) ||
-      contact.last_name?.toLowerCase().includes(query) ||
-      contact.company?.toLowerCase().includes(query) ||
-      contact.role?.toLowerCase().includes(query) ||
-      contact.industry?.toLowerCase().includes(query)
+      contact.email.toLowerCase().includes(searchLower) ||
+      contact.first_name?.toLowerCase().includes(searchLower) ||
+      contact.last_name?.toLowerCase().includes(searchLower) ||
+      contact.company?.toLowerCase().includes(searchLower)
     );
   });
 
-  const totalContacts = contacts.length;
-  const allSelected = selectedContacts.size > 0 && selectedContacts.size === filteredContacts.length;
-  const someSelected = selectedContacts.size > 0 && selectedContacts.size < filteredContacts.length;
+  const totalContactsCount = contacts.length;
 
   return (
     <AppLayout currentPath="/app/contacts">
-      <div className="flex h-screen">
+      <div className="flex h-full">
         {/* Left Sidebar - Groups */}
-        <div className="w-1/4 border-r border-black bg-white overflow-y-auto">
-          <div className="p-6">
-            <h2 className="text-xl font-serif font-bold mb-4">Contact Groups</h2>
-            
-            {/* All Contacts */}
-            <div
-              onClick={() => handleGroupSelect(null)}
-              className={`p-3 rounded-lg mb-2 cursor-pointer transition-all ${
-                selectedGroupId === null
-                  ? 'bg-[#f3ba42] border-2 border-black font-semibold'
-                  : 'bg-white border border-gray-300 hover:border-gray-400'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  📁 All Contacts
-                </span>
-                <span className="text-sm px-2 py-1 bg-white bg-opacity-50 rounded-full">
-                  {totalContacts}
-                </span>
-              </div>
-            </div>
-
-            {/* Groups List */}
-            <div className="space-y-2 mb-4">
-              {groups.map(group => (
-                <div
-                  key={group.id}
-                  onClick={() => handleGroupSelect(group.id)}
-                  className={`p-3 rounded-lg cursor-pointer transition-all ${
-                    selectedGroupId === group.id
-                      ? 'bg-[#f3ba42] border-2 border-black font-semibold'
-                      : 'bg-white border border-gray-300 hover:border-gray-400'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{group.name}</div>
-                      {group.description && (
-                        <div className="text-xs text-gray-600 truncate">{group.description}</div>
-                      )}
-                    </div>
-                    <span className="ml-2 text-sm px-2 py-1 bg-white bg-opacity-50 rounded-full flex-shrink-0">
-                      {group.contact_count}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* New Group Button */}
+        <div className="w-1/4 border-r border-gray-200 overflow-y-auto p-4">
+          <div className="mb-4">
             <Button
-              variant="secondary"
+              variant="primary"
               size="sm"
-              icon={Plus}
+              fullWidth
               onClick={() => setShowAddGroupModal(true)}
-              className="w-full"
             >
               New Group
             </Button>
           </div>
+
+          <div className="space-y-2">
+            {/* All Contacts */}
+            <button
+              onClick={() => setSelectedGroupId(null)}
+              className={`w-full text-left px-4 py-3 rounded-lg border transition-all duration-200 ${
+                selectedGroupId === null
+                  ? 'bg-[#f3ba42] border-black font-semibold'
+                  : 'bg-white border-gray-200 hover:border-black'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span>All Contacts</span>
+                <span className={`text-sm ${
+                  selectedGroupId === null ? 'text-black' : 'text-gray-500'
+                }`}>
+                  {totalContactsCount}
+                </span>
+              </div>
+            </button>
+
+            {/* Groups */}
+            {groups.map((group) => (
+              <button
+                key={group.id}
+                onClick={() => setSelectedGroupId(group.id)}
+                className={`w-full text-left px-4 py-3 rounded-lg border transition-all duration-200 ${
+                  selectedGroupId === group.id
+                    ? 'bg-[#f3ba42] border-black font-semibold'
+                    : 'bg-white border-gray-200 hover:border-black'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span>{group.name}</span>
+                  <span className={`text-sm ${
+                    selectedGroupId === group.id ? 'text-black' : 'text-gray-500'
+                  }`}>
+                    {group.contact_count}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Main Content - Contacts List */}
-        <div className="flex-1 overflow-y-auto bg-gray-50">
+        {/* Right Content - Contact List */}
+        <div className="flex-1 overflow-y-auto">
           <div className="p-8">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h1 className="text-3xl font-serif font-bold mb-2">
-                  {selectedGroupId 
-                    ? groups.find(g => g.id === selectedGroupId)?.name 
-                    : 'All Contacts'
-                  }
-                </h1>
-                <p className="text-gray-600">
-                  {filteredContacts.length} contact{filteredContacts.length !== 1 ? 's' : ''}
-                  {searchQuery && ` matching "${searchQuery}"`}
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <Button
-                  variant="secondary"
-                  size="md"
-                  icon={Upload}
-                  onClick={() => setShowImportModal(true)}
-                >
-                  Import CSV
-                </Button>
-                <Button
-                  variant="primary"
-                  size="md"
-                  icon={Plus}
-                  onClick={() => setShowAddContactModal(true)}
-                >
-                  Add Contact
-                </Button>
-              </div>
+            <div className="mb-6">
+              <h1 className="text-3xl font-serif font-bold mb-2">
+                {selectedGroupId 
+                  ? groups.find(g => g.id === selectedGroupId)?.name || 'Contacts'
+                  : 'All Contacts'
+                }
+              </h1>
+              <p className="text-gray-600">
+                {filteredContacts.length} {filteredContacts.length === 1 ? 'contact' : 'contacts'}
+              </p>
             </div>
 
-            {/* Search Bar */}
-            <div className="bg-white border border-black rounded-lg p-4 mb-6">
-              <Input
-                icon={Search}
-                type="text"
-                placeholder="Search contacts by name, email, company, role, or industry..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+            {/* Actions Bar */}
+            <div className="flex gap-3 mb-6">
+              <div className="flex-1">
+                <Input
+                  type="text"
+                  placeholder="Search by name, email, or company..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  icon={Search}
+                />
+              </div>
+              <Button
+                variant="secondary"
+                size="md"
+                icon={Upload}
+                onClick={() => setShowImportModal(true)}
+              >
+                Import CSV
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                icon={Plus}
+                onClick={() => setShowAddContactModal(true)}
+              >
+                Add Contact
+              </Button>
             </div>
 
             {/* Bulk Actions */}
             {selectedContacts.size > 0 && (
-              <div className="bg-[#57377d] text-white rounded-lg p-4 mb-6 flex items-center justify-between">
+              <div className="mb-4 bg-[#f3ba42] border border-black rounded-lg px-4 py-3 flex items-center justify-between">
                 <span className="font-semibold">
-                  {selectedContacts.size} contact{selectedContacts.size !== 1 ? 's' : ''} selected
+                  {selectedContacts.size} selected
                 </span>
-                <div className="flex gap-3">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setSelectedContacts(new Set())}
-                  >
-                    Clear Selection
-                  </Button>
+                <div className="flex gap-2">
                   <Button
                     variant="destructive"
                     size="sm"
                     icon={Trash2}
                     onClick={handleBulkDelete}
                   >
-                    Delete Selected
+                    Delete
                   </Button>
                 </div>
               </div>
             )}
 
-            {/* Contacts Table */}
+            {/* Contact Table */}
             {loading ? (
               <div className="bg-white border border-black rounded-lg p-12 text-center">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#f3ba42] mb-4"></div>
@@ -415,53 +378,47 @@ export const Contacts = () => {
             ) : (
               <div className="bg-white border border-black rounded-lg overflow-hidden">
                 <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-black">
+                  <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-4 py-3 text-left w-12">
+                      <th className="px-4 py-3 text-left">
                         <input
                           type="checkbox"
-                          checked={allSelected}
-                          ref={input => {
-                            if (input) input.indeterminate = someSelected;
-                          }}
-                          onChange={(e) => handleSelectAll(e.target.checked)}
-                          className="rounded border-gray-300 text-[#f3ba42] focus:ring-[#57377d]"
+                          checked={selectedContacts.size === filteredContacts.length && filteredContacts.length > 0}
+                          onChange={handleSelectAll}
+                          className="w-4 h-4 rounded border-black"
                         />
                       </th>
-                      <th className="px-4 py-3 text-left font-semibold">Name</th>
-                      <th className="px-4 py-3 text-left font-semibold">Email</th>
-                      <th className="px-4 py-3 text-left font-semibold">Company</th>
-                      <th className="px-4 py-3 text-left font-semibold">Role</th>
-                      <th className="px-4 py-3 text-left font-semibold">Industry</th>
-                      <th className="px-4 py-3 text-left font-semibold">Status</th>
-                      <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold">Name</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold">Email</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold">Company</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold">Role</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold">Industry</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold">Status</th>
+                      <th className="px-4 py-3 text-right text-sm font-semibold">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {filteredContacts.map(contact => (
-                      <tr key={contact.id} className="hover:bg-gray-50 transition-colors">
+                    {filteredContacts.map((contact) => (
+                      <tr key={contact.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <input
                             type="checkbox"
                             checked={selectedContacts.has(contact.id)}
-                            onChange={(e) => handleSelectContact(contact.id, e.target.checked)}
-                            className="rounded border-gray-300 text-[#f3ba42] focus:ring-[#57377d]"
+                            onChange={() => handleContactCheckbox(contact.id)}
+                            className="w-4 h-4 rounded border-black"
                           />
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="font-medium">
-                            {contact.first_name || contact.last_name 
-                              ? `${contact.first_name || ''} ${contact.last_name || ''}`.trim()
-                              : '-'
-                            }
-                          </div>
+                        <td className="px-4 py-3 font-medium">
+                          {contact.first_name || contact.last_name
+                            ? `${contact.first_name || ''} ${contact.last_name || ''}`.trim()
+                            : '-'}
                         </td>
-                        <td className="px-4 py-3 text-gray-700">{contact.email}</td>
-                        <td className="px-4 py-3 text-gray-700">{contact.company || '-'}</td>
-                        <td className="px-4 py-3 text-gray-700">{contact.role || '-'}</td>
-                        <td className="px-4 py-3 text-gray-700">{contact.industry || '-'}</td>
+                        <td className="px-4 py-3 text-gray-600">{contact.email}</td>
+                        <td className="px-4 py-3 text-gray-600">{contact.company || '-'}</td>
+                        <td className="px-4 py-3 text-gray-600">{contact.role || '-'}</td>
+                        <td className="px-4 py-3 text-gray-600">{contact.industry || '-'}</td>
                         <td className="px-4 py-3">
-                          <span className={`px-2 py-1 text-xs rounded-full ${
+                          <span className={`inline-block px-2 py-1 text-xs rounded-full ${
                             contact.status === 'active'
                               ? 'bg-green-100 text-green-800'
                               : contact.status === 'bounced'
@@ -497,54 +454,49 @@ export const Contacts = () => {
         </div>
       </div>
 
-      {/* Modals */}
-      {showAddContactModal && (
-        <AddContactModal
-          onClose={() => setShowAddContactModal(false)}
-          onSuccess={() => {
+      {/* Modals - ALL NOW HAVE isOpen PROP */}
+      <AddContactModal
+        isOpen={showAddContactModal}
+        onClose={() => setShowAddContactModal(false)}
+        onSuccess={() => {
+          fetchContacts();
+          fetchGroups();
+        }}
+        groups={groups}
+      />
+
+      <AddGroupModal
+        isOpen={showAddGroupModal}
+        onClose={() => setShowAddGroupModal(false)}
+        onSuccess={() => {
+          fetchGroups();
+        }}
+      />
+
+      <ImportCSVModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={() => {
+          fetchContacts();
+          fetchGroups();
+        }}
+        groups={groups}
+      />
+
+      <EditContactModal
+        isOpen={!!editingContactId}
+        contactId={editingContactId}
+        onClose={() => setEditingContactId(null)}
+        onSuccess={() => {
+          if (selectedGroupId) {
+            fetchContactsInGroup(selectedGroupId);
+          } else {
             fetchContacts();
-            fetchGroups();
-            setShowAddContactModal(false);
-          }}
-        />
-      )}
-
-      {showAddGroupModal && (
-        <AddGroupModal
-          onClose={() => setShowAddGroupModal(false)}
-          onSuccess={() => {
-            fetchGroups();
-            setShowAddGroupModal(false);
-          }}
-        />
-      )}
-
-      {showImportModal && (
-        <ImportCSVModal
-          onClose={() => setShowImportModal(false)}
-          onSuccess={() => {
-            fetchContacts();
-            fetchGroups();
-            setShowImportModal(false);
-          }}
-        />
-      )}
-
-      {editingContactId && (
-        <EditContactModal
-          contactId={editingContactId}
-          onClose={() => setEditingContactId(null)}
-          onSuccess={() => {
-            if (selectedGroupId) {
-              fetchContactsInGroup(selectedGroupId);
-            } else {
-              fetchContacts();
-            }
-            fetchGroups();
-            setEditingContactId(null);
-          }}
-        />
-      )}
+          }
+          fetchGroups();
+        }}
+        groups={groups}
+      />
     </AppLayout>
   );
 };
