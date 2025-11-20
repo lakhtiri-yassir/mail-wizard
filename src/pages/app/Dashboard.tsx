@@ -1,17 +1,17 @@
-import { useState, useEffect } from 'react';
-import { TrendingUp, Mail, Users, MousePointer, MailOpen } from 'lucide-react';
-import { AppLayout } from '../../components/app/AppLayout';
-import { useAuth } from '../../contexts/AuthContext';
-import { Button } from '../../components/ui/Button';
-import { supabase } from '../../lib/supabase';
+import { useState, useEffect } from "react";
+import { TrendingUp, Mail, Users, MousePointer, MailOpen } from "lucide-react";
+import { AppLayout } from "../../components/app/AppLayout";
+import { useAuth } from "../../contexts/AuthContext";
+import { Button } from "../../components/ui/Button";
+import { supabase } from "../../lib/supabase";
 
 export const Dashboard = () => {
   const { profile, user } = useAuth();
   const [stats, setStats] = useState({
-    totalSent: '0',
-    openRate: '0%',
-    clickRate: '0%',
-    activeContacts: '0'
+    totalSent: "0",
+    openRate: "0%",
+    clickRate: "0%",
+    activeContacts: "0",
   });
   const [recentCampaigns, setRecentCampaigns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,42 +25,46 @@ export const Dashboard = () => {
   const fetchDashboardData = async () => {
     try {
       const { data: campaigns } = await supabase
-        .from('campaigns')
-        .select('*')
-        .eq('status', 'sent')
-        .order('sent_at', { ascending: false });
+        .from("campaigns")
+        .select("*")
+        .eq("status", "sent")
+        .order("sent_at", { ascending: false });
 
-      const totalSent = campaigns?.reduce((sum, c) => sum + (c.recipients_count || 0), 0) || 0;
-      const totalOpens = campaigns?.reduce((sum, c) => sum + (c.opens || 0), 0) || 0;
-      const totalClicks = campaigns?.reduce((sum, c) => sum + (c.clicks || 0), 0) || 0;
+      const totalSent =
+        campaigns?.reduce((sum, c) => sum + (c.recipients_count || 0), 0) || 0;
+      const totalOpens =
+        campaigns?.reduce((sum, c) => sum + (c.opens || 0), 0) || 0;
+      const totalClicks =
+        campaigns?.reduce((sum, c) => sum + (c.clicks || 0), 0) || 0;
 
-      const openRate = totalSent > 0 ? ((totalOpens / totalSent) * 100).toFixed(1) : '0.0';
-      const clickRate = totalSent > 0 ? ((totalClicks / totalSent) * 100).toFixed(1) : '0.0';
+      const openRate =
+        totalSent > 0 ? ((totalOpens / totalSent) * 100).toFixed(1) : "0.0";
+      const clickRate =
+        totalSent > 0 ? ((totalClicks / totalSent) * 100).toFixed(1) : "0.0";
 
       const { data: contacts } = await supabase
-        .from('contacts')
-        .select('id', { count: 'exact' })
-        .eq('status', 'active');
+        .from("contacts")
+        .select("id", { count: "exact" })
+        .eq("status", "active");
 
       setStats({
         totalSent: totalSent.toLocaleString(),
         openRate: `${openRate}%`,
         clickRate: `${clickRate}%`,
-        activeContacts: (contacts?.length || 0).toLocaleString()
+        activeContacts: (contacts?.length || 0).toLocaleString(),
       });
 
       setRecentCampaigns(
-        campaigns?.slice(0, 5).map(c => ({
+        campaigns?.slice(0, 5).map((c) => ({
           name: c.name,
           sent: (c.recipients_count || 0).toLocaleString(),
           opens: (c.opens || 0).toLocaleString(),
           clicks: (c.clicks || 0).toLocaleString(),
-          date: new Date(c.sent_at).toLocaleDateString()
+          date: new Date(c.sent_at).toLocaleDateString(),
         })) || []
       );
-
     } catch (error) {
-      console.error('Error fetching dashboard data:', error);
+      console.error("Error fetching dashboard data:", error);
     } finally {
       setLoading(false);
     }
@@ -68,36 +72,36 @@ export const Dashboard = () => {
 
   const statsDisplay = [
     {
-      name: 'Total Sent',
+      name: "Total Sent",
       value: stats.totalSent,
-      change: '+12.5%',
-      trend: 'up',
+      change: "+12.5%",
+      trend: "up",
       icon: Mail,
-      color: 'text-gold',
+      color: "text-gold",
     },
     {
-      name: 'Open Rate',
+      name: "Open Rate",
       value: stats.openRate,
-      change: '+2.1%',
-      trend: 'up',
+      change: "+2.1%",
+      trend: "up",
       icon: MailOpen,
-      color: 'text-purple',
+      color: "text-purple",
     },
     {
-      name: 'Click Rate',
+      name: "Click Rate",
       value: stats.clickRate,
-      change: '+4.2%',
-      trend: 'up',
+      change: "+4.2%",
+      trend: "up",
       icon: MousePointer,
-      color: 'text-gold',
+      color: "text-gold",
     },
     {
-      name: 'Active Contacts',
+      name: "Active Contacts",
       value: stats.activeContacts,
-      change: '+156',
-      trend: 'up',
+      change: "+156",
+      trend: "up",
       icon: Users,
-      color: 'text-purple',
+      color: "text-purple",
     },
   ];
 
@@ -106,9 +110,11 @@ export const Dashboard = () => {
       <div className="p-8">
         <div className="mb-8">
           <h1 className="text-3xl font-serif font-bold mb-2">
-            Welcome back, {profile?.full_name || 'there'}
+            Welcome back, {profile?.full_name || "there"}
           </h1>
-          <p className="text-gray-600">Here's what's happening with your email campaigns today.</p>
+          <p className="text-gray-600">
+            Here's what's happening with your email campaigns today.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -122,7 +128,7 @@ export const Dashboard = () => {
                   </div>
                   <div
                     className={`text-sm font-semibold ${
-                      stat.trend === 'up' ? 'text-green-600' : 'text-red-600'
+                      stat.trend === "up" ? "text-green-600" : "text-red-600"
                     }`}
                   >
                     {stat.change}
@@ -140,7 +146,9 @@ export const Dashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-2 card">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-serif font-bold">Performance Overview</h2>
+              <h2 className="text-xl font-serif font-bold">
+                Performance Overview
+              </h2>
               <select className="input-base w-auto">
                 <option>Last 7 days</option>
                 <option>Last 30 days</option>
@@ -151,7 +159,9 @@ export const Dashboard = () => {
               <div className="text-center">
                 <TrendingUp size={48} className="text-gold mx-auto mb-4" />
                 <p className="text-gray-600">Chart visualization placeholder</p>
-                <p className="text-sm text-gray-500 mt-2">Opens and clicks over time</p>
+                <p className="text-sm text-gray-500 mt-2">
+                  Opens and clicks over time
+                </p>
               </div>
             </div>
           </div>
@@ -159,29 +169,37 @@ export const Dashboard = () => {
           <div className="card">
             <h2 className="text-xl font-serif font-bold mb-6">Quick Actions</h2>
             <div className="space-y-3">
-              <Button variant="primary" size="md" fullWidth icon={Mail}>
-                Create Campaign
-              </Button>
-              <Button variant="secondary" size="md" fullWidth icon={Users}>
-                Add Contacts
-              </Button>
-              <Button variant="secondary" size="md" fullWidth>
-                View Analytics
-              </Button>
+              <a href="/app/campaigns" className="block">
+                <Button variant="primary" size="md" fullWidth icon={Mail}>
+                  Create Campaign
+                </Button>
+              </a>
+              <a href="/app/contacts" className="block">
+                <Button variant="secondary" size="md" fullWidth icon={Users}>
+                  Add Contacts
+                </Button>
+              </a>
+              <a href="/app/analytics" className="block">
+                <Button variant="secondary" size="md" fullWidth>
+                  View Analytics
+                </Button>
+              </a>
             </div>
 
             <div className="mt-6 pt-6 border-t border-gray-200">
               <h3 className="text-sm font-semibold mb-3">Your Plan</h3>
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                 <p className="font-semibold mb-1">
-                  {profile?.plan_type.replace('_', ' ').toUpperCase()}
+                  {profile?.plan_type.replace("_", " ").toUpperCase()}
                 </p>
                 <p className="text-sm text-gray-600 mb-3">
-                  {profile?.plan_type === 'free' && '500 emails/month remaining'}
-                  {profile?.plan_type === 'pro' && '24,543 emails sent this month'}
-                  {profile?.plan_type === 'pro_plus' && 'Unlimited emails'}
+                  {profile?.plan_type === "free" &&
+                    "500 emails/month remaining"}
+                  {profile?.plan_type === "pro" &&
+                    "24,543 emails sent this month"}
+                  {profile?.plan_type === "pro_plus" && "Unlimited emails"}
                 </p>
-                {profile?.plan_type === 'free' && (
+                {profile?.plan_type === "free" && (
                   <Button variant="primary" size="sm" fullWidth>
                     Upgrade to Pro
                   </Button>
@@ -192,16 +210,28 @@ export const Dashboard = () => {
         </div>
 
         <div className="card">
-          <h2 className="text-xl font-serif font-bold mb-6">Recent Campaigns</h2>
+          <h2 className="text-xl font-serif font-bold mb-6">
+            Recent Campaigns
+          </h2>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 text-sm font-semibold">Campaign</th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold">Sent</th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold">Opens</th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold">Clicks</th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold">Date</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">
+                    Campaign
+                  </th>
+                  <th className="text-right py-3 px-4 text-sm font-semibold">
+                    Sent
+                  </th>
+                  <th className="text-right py-3 px-4 text-sm font-semibold">
+                    Opens
+                  </th>
+                  <th className="text-right py-3 px-4 text-sm font-semibold">
+                    Clicks
+                  </th>
+                  <th className="text-right py-3 px-4 text-sm font-semibold">
+                    Date
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -218,7 +248,9 @@ export const Dashboard = () => {
                     <td className="py-4 px-4 text-right text-gold font-semibold">
                       {campaign.clicks}
                     </td>
-                    <td className="py-4 px-4 text-right text-gray-600 text-sm">{campaign.date}</td>
+                    <td className="py-4 px-4 text-right text-gray-600 text-sm">
+                      {campaign.date}
+                    </td>
                   </tr>
                 ))}
               </tbody>
