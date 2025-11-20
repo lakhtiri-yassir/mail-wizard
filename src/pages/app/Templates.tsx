@@ -26,7 +26,7 @@ export const Templates = () => {
   const isPlusUser = profile?.plan_type === 'pro_plus';
 
   const handleUseTemplate = (templateId: string) => {
-    navigate(`/app/campaigns/create?template=${templateId}`);
+  navigate(`/app/templates/editor?template=${templateId}`);
   };
 
   return (

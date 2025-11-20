@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AdminAuthProvider, useAdminAuth } from './contexts/AdminAuthContext';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
+import { TemplateEditor } from './components/templates/TemplateEditor';
 import { SignupPage } from './pages/SignupPage';
 import { Dashboard } from './pages/app/Dashboard';
 import { Contacts } from './pages/app/Contacts';
@@ -95,7 +96,7 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
-
+            <Route path="/app/templates/editor" element={<ProtectedRoute><TemplateEditor /></ProtectedRoute>} />
             <Route path="/app" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/app/contacts" element={<ProtectedRoute><Contacts /></ProtectedRoute>} />
             <Route path="/app/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />

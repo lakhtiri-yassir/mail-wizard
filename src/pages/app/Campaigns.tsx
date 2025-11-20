@@ -26,6 +26,7 @@ export const Campaigns = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
+  const [createStep, setCreateStep] = useState<'template' | 'editor' | 'recipients' | 'review'>('template');
 
   useEffect(() => {
     if (user) {
