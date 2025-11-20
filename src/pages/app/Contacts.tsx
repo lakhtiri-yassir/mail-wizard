@@ -13,6 +13,9 @@ import {
 import { AppLayout } from '../../components/app/AppLayout';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { AddContactModal } from '../../components/contacts/AddContactModal';
+import { AddGroupModal } from '../../components/contacts/AddGroupModal';
+import { ImportCSVModal } from '../../components/contacts/ImportCSVModal';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -362,7 +365,32 @@ export const Contacts = () => {
         </div>
       </div>
 
-      {/* Modals will be added here */}
+      {/* Modals */}
+      <AddContactModal
+        isOpen={showAddContactModal}
+        onClose={() => setShowAddContactModal(false)}
+        onSuccess={() => {
+          fetchContacts();
+          fetchGroups();
+        }}
+        groups={groups}
+      />
+
+      <AddGroupModal
+        isOpen={showAddGroupModal}
+        onClose={() => setShowAddGroupModal(false)}
+        onSuccess={fetchGroups}
+      />
+
+      <ImportCSVModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={() => {
+          fetchContacts();
+          fetchGroups();
+        }}
+        groups={groups}
+      />
     </AppLayout>
   );
 };
