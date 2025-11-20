@@ -2,10 +2,7 @@ import {
   LayoutDashboard,
   Users,
   Mail,
-  Zap,
   FileText,
-  Image,
-  Globe,
   BarChart3,
   Settings,
   Crown,
@@ -15,12 +12,9 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const navigation = [
   { name: 'Dashboard', icon: LayoutDashboard, href: '/app' },
-  { name: 'Audience', icon: Users, href: '/app/audience' },
+  { name: 'Contacts', icon: Users, href: '/app/contacts' },
   { name: 'Campaigns', icon: Mail, href: '/app/campaigns' },
-  { name: 'Automations', icon: Zap, href: '/app/automations', badge: 'Pro Plus' },
   { name: 'Templates', icon: FileText, href: '/app/templates' },
-  { name: 'Content Studio', icon: Image, href: '/app/content' },
-  { name: 'Landing Pages', icon: Globe, href: '/app/landing-pages' },
   { name: 'Analytics', icon: BarChart3, href: '/app/analytics' },
   { name: 'Settings', icon: Settings, href: '/app/settings' },
 ];
