@@ -39,13 +39,19 @@ export const TemplateEditor: React.FC = () => {
   const [searchParams] = useSearchParams();
   const templateId = searchParams.get('template');
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
+  
+  // Check if we're in campaign creation mode
+  const isCreationMode = searchParams.get('createMode') === 'true';
+  const prefilledName = searchParams.get('name') || '';
+  const prefilledSubject = searchParams.get('subject') || '';
   
   const [template, setTemplate] = useState<any>(null);
   const [editableSections, setEditableSections] = useState<Array<{ id: string; label: string; type: 'text' | 'textarea'; defaultContent: string }>>([]);
   const [editedContent, setEditedContent] = useState<Record<string, string>>({});
-  const [campaignName, setCampaignName] = useState('');
-  const [subject, setSubject] = useState('');
+  const [campaignName, setCampaignName] = useState(prefilledName);
+  const [subject, setSubject] = useState(prefilledSubject);
+  const [loading, setLoading] = useState(false);
   
   const isPlusUser = profile?.plan_type === 'pro_plus';
 
@@ -76,33 +82,6 @@ export const TemplateEditor: React.FC = () => {
     }));
   };
 
-  const handleSaveAndContinue = () => {
-    if (!campaignName.trim()) {
-      toast.error('Please enter a campaign name');
-      return;
-    }
-    if (!subject.trim()) {
-      toast.error('Please enter an email subject');
-      return;
-    }
-
-    // Save to localStorage for now
-    const campaignData = {
-      name: campaignName,
-      subject,
-      templateId: template?.id,
-      content: editedContent,
-      htmlContent: generateFinalHtml()
-    };
-    
-    localStorage.setItem('draft_campaign', JSON.stringify(campaignData));
-    
-    toast.success('Campaign draft saved!');
-    
-    // Navigate back to campaigns
-    navigate('/app/campaigns');
-  };
-
   const generateFinalHtml = (): string => {
     if (!template) return '';
     
@@ -118,188 +97,232 @@ export const TemplateEditor: React.FC = () => {
     return finalHtml;
   };
 
+  const handleSaveAndContinue = async () => {
+    if (!campaignName.trim()) {
+      toast.error('Please enter a campaign name');
+      return;
+    }
+    if (!subject.trim()) {
+      toast.error('Please enter an email subject');
+      return;
+    }
+
+    if (isCreationMode) {
+      // Create campaign in database
+      setLoading(true);
+      
+      try {
+        const { error: insertError } = await supabase
+          .from('campaigns')
+          .insert({
+            user_id: user?.id,
+            name: campaignName,
+            subject: subject,
+            template_id: template?.id,
+            content: {
+              html: generateFinalHtml()
+            },
+            status: 'draft',
+            from_email: user?.email,
+            from_name: 'Mail Wizard'
+          });
+
+        if (insertError) throw insertError;
+
+        toast.success('Campaign draft created successfully!');
+        navigate('/app/campaigns');
+      } catch (err: any) {
+        console.error('Error creating campaign:', err);
+        toast.error(err.message || 'Failed to create campaign');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Normal mode - save to localStorage
+      const campaignData = {
+        name: campaignName,
+        subject,
+        templateId: template?.id,
+        content: editedContent,
+        htmlContent: generateFinalHtml()
+      };
+      
+      localStorage.setItem('draft_campaign', JSON.stringify(campaignData));
+      
+      toast.success('Campaign draft saved!');
+      navigate('/app/campaigns');
+    }
+  };
+
   const mergeFields = template ? extractMergeFields(template.htmlContent) : [];
-  const hasPersonalization = mergeFields.length > 0;
 
   if (!template) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
-        <div className="text-center">
-          <div className="animate-spin w-12 h-12 border-4 border-gold border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-gray-600">Loading template...</p>
+      <AppLayout currentPath="/app/templates">
+        <div className="p-8">
+          <div className="text-center py-12">
+            <p className="text-gray-600">Loading template...</p>
+          </div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-black px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={ArrowLeft}
-              onClick={() => navigate('/app/templates')}
-            >
-              Back
-            </Button>
+    <AppLayout currentPath="/app/templates">
+      <div className="p-8 max-w-5xl mx-auto">
+        {/* Breadcrumb */}
+        {isCreationMode && (
+          <div className="mb-4 text-sm text-gray-600">
+            <span className="hover:text-black cursor-pointer" onClick={() => navigate('/app/campaigns')}>
+              Campaigns
+            </span>
+            {' > '}
+            <span className="hover:text-black cursor-pointer" onClick={() => navigate(-1)}>
+              Select Template
+            </span>
+            {' > '}
+            <span className="text-black font-semibold">Edit Template</span>
+          </div>
+        )}
+
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-serif font-bold mb-2">
+            {isCreationMode ? 'Customize Template' : 'Edit Template'}
+          </h1>
+          <p className="text-gray-600">
+            {isCreationMode 
+              ? 'Fill in the content for your campaign email.' 
+              : 'Customize this template and save it for your campaign.'}
+          </p>
+        </div>
+
+        {/* Template Info Card */}
+        <div className="bg-gray-50 border-2 border-black rounded-lg p-4 mb-6">
+          <div className="flex items-center gap-3">
+            <FileText size={24} />
             <div>
-              <h1 className="text-2xl font-serif font-bold">{template.name}</h1>
+              <h3 className="font-bold">{template.name}</h3>
               <p className="text-sm text-gray-600">{template.description}</p>
             </div>
           </div>
+        </div>
+
+        {/* Campaign Details */}
+        <div className="bg-white border-2 border-black rounded-lg p-6 mb-6">
+          <h2 className="text-xl font-serif font-bold mb-4">Campaign Details</h2>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Campaign Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={campaignName}
+                onChange={(e) => setCampaignName(e.target.value)}
+                disabled={isCreationMode}
+                className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#57377d] focus:border-transparent ${
+                  isCreationMode ? 'bg-gray-100 cursor-not-allowed' : ''
+                }`}
+                placeholder="e.g., Summer Newsletter 2025"
+              />
+              {isCreationMode && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Campaign name is set and cannot be changed here.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Subject Line <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                disabled={isCreationMode}
+                className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#57377d] focus:border-transparent ${
+                  isCreationMode ? 'bg-gray-100 cursor-not-allowed' : ''
+                }`}
+                placeholder="Enter email subject line"
+              />
+              {isCreationMode && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Subject line is set and cannot be changed here.
+                </p>
+              )}
+              {template.supportsPersonalization && (
+                <p className="text-xs text-gray-500 mt-1">
+                  💡 You can use merge fields: {mergeFields.map(f => `{{${f}}}`).join(', ')}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Editable Sections */}
+        <div className="bg-white border-2 border-black rounded-lg p-6 mb-6">
+          <h2 className="text-xl font-serif font-bold mb-4">Email Content</h2>
+          
+          <div className="space-y-4">
+            {editableSections.map((section) => (
+              <div key={section.id}>
+                <label className="block text-sm font-medium mb-2 capitalize">
+                  {section.label}
+                </label>
+                {section.type === 'textarea' ? (
+                  <textarea
+                    value={editedContent[section.id] || ''}
+                    onChange={(e) => handleContentChange(section.id, e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#57377d] focus:border-transparent"
+                    rows={5}
+                    placeholder={`Enter ${section.label.replace(/_/g, ' ')}`}
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={editedContent[section.id] || ''}
+                    onChange={(e) => handleContentChange(section.id, e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#57377d] focus:border-transparent"
+                    placeholder={`Enter ${section.label.replace(/_/g, ' ')}`}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {template.supportsPersonalization && !isPlusUser && (
+            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <p className="text-sm text-amber-800">
+                <strong>Note:</strong> This template supports personalization, but it requires a Pro Plus plan. 
+                Merge fields will not be replaced for recipients.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between">
+          <Button
+            variant="tertiary"
+            onClick={() => navigate(isCreationMode ? -1 : '/app/campaigns')}
+          >
+            {isCreationMode ? '← Back to Templates' : 'Cancel'}
+          </Button>
+          
           <Button
             variant="primary"
-            size="md"
             onClick={handleSaveAndContinue}
+            loading={loading}
+            disabled={loading}
           >
-            Save Campaign Draft
+            {isCreationMode ? 'Create Campaign Draft' : 'Save and Continue'}
           </Button>
         </div>
       </div>
-
-      {/* Pro Plus Warning */}
-      {hasPersonalization && !isPlusUser && (
-        <div className="bg-amber-50 border-b border-amber-200 px-6 py-3">
-          <div className="flex items-center gap-3">
-            <Lock size={20} className="text-amber-600" />
-            <p className="text-sm text-amber-800">
-              This template includes personalization fields ({mergeFields.join(', ')}). 
-              <span className="font-semibold"> Upgrade to Pro Plus</span> to use these features.
-            </p>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => navigate('/app/settings?tab=billing')}
-            >
-              Upgrade
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left: Editor Form */}
-        <div className="w-1/2 border-r border-gray-300 overflow-auto p-6 bg-white">
-          <div className="space-y-6 max-w-2xl">
-            {/* Campaign Details */}
-            <div>
-              <h2 className="text-lg font-serif font-bold mb-4">Campaign Details</h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Campaign Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={campaignName}
-                    onChange={(e) => setCampaignName(e.target.value)}
-                    className="input-base w-full"
-                    placeholder="e.g., November Newsletter"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Email Subject *
-                  </label>
-                  <input
-                    type="text"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    className="input-base w-full"
-                    placeholder="e.g., You won't believe what happened..."
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Editable Content */}
-            {editableSections.length > 0 ? (
-              <div>
-                <h2 className="text-lg font-serif font-bold mb-4">Edit Content</h2>
-                <div className="space-y-4">
-                  {editableSections.map((section) => (
-                    <div key={section.id}>
-                      <label className="block text-sm font-medium mb-1">
-                        {section.label}
-                      </label>
-                      {section.type === 'textarea' ? (
-                        <textarea
-                          value={editedContent[section.id] || ''}
-                          onChange={(e) => handleContentChange(section.id, e.target.value)}
-                          className="input-base w-full"
-                          rows={4}
-                          placeholder={`Enter ${section.label.toLowerCase()}...`}
-                        />
-                      ) : (
-                        <input
-                          type="text"
-                          value={editedContent[section.id] || ''}
-                          onChange={(e) => handleContentChange(section.id, e.target.value)}
-                          className="input-base w-full"
-                          placeholder={`Enter ${section.label.toLowerCase()}...`}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-800">
-                  This template has no editable sections. You can use it as-is or customize it by editing the HTML.
-                </p>
-              </div>
-            )}
-
-            {/* Personalization Info */}
-            {hasPersonalization && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-purple-900 mb-2">
-                  Personalization Fields
-                </h3>
-                <p className="text-sm text-purple-800 mb-2">
-                  This template supports the following merge fields:
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {mergeFields.map((field) => (
-                    <span
-                      key={field}
-                      className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded"
-                    >
-                      {field}
-                    </span>
-                  ))}
-                </div>
-                {!isPlusUser && (
-                  <p className="text-xs text-purple-600 mt-2">
-                    * Upgrade to Pro Plus to use personalization features
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right: Live Preview */}
-        <div className="w-1/2 overflow-auto p-6 bg-gray-100">
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-white border border-gray-300 rounded-lg overflow-hidden shadow-lg">
-              <div className="bg-gray-200 px-4 py-2 border-b border-gray-300">
-                <p className="text-sm font-semibold text-gray-700">Live Preview</p>
-              </div>
-              <div 
-                className="p-6 overflow-auto"
-                style={{ minHeight: '400px' }}
-                dangerouslySetInnerHTML={{ __html: generateFinalHtml() }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    </AppLayout>
   );
 };

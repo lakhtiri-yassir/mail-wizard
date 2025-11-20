@@ -270,43 +270,18 @@ interface CreateCampaignModalProps {
 
 const CreateCampaignModal = ({ onClose, onSuccess }: CreateCampaignModalProps) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   
-  // Multi-step state
-  const [step, setStep] = useState<'template' | 'edit' | 'recipients' | 'review'>('template');
-  
-  // Campaign data
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  // Form state
   const [campaignName, setCampaignName] = useState('');
   const [subject, setSubject] = useState('');
-  const [editedContent, setEditedContent] = useState<Record<string, string>>({});
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [contentChoice, setContentChoice] = useState<'template' | 'custom'>('template');
+  const [customHtml, setCustomHtml] = useState('');
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Get selected template
-  const selectedTemplate = EMAIL_TEMPLATES.find(t => t.id === selectedTemplateId);
-  const editableSections = selectedTemplate ? extractEditableSections(selectedTemplate.htmlContent) : [];
-  const hasPersonalization = selectedTemplate ? selectedTemplate.supportsPersonalization : false;
-
-  const handleTemplateSelect = (templateId: string) => {
-    setSelectedTemplateId(templateId);
-    const template = EMAIL_TEMPLATES.find(t => t.id === templateId);
-    if (template) {
-      setCampaignName(template.name);
-      setSubject(''); // User will fill this
-    }
-  };
-
-  const handleNextFromTemplate = () => {
-    if (!selectedTemplateId) {
-      setError('Please select a template');
-      return;
-    }
-    setStep('edit');
-  };
-
-  const handleNextFromEdit = () => {
+  const handleBrowseTemplates = () => {
     if (!campaignName.trim()) {
       setError('Please enter a campaign name');
       return;
@@ -315,297 +290,204 @@ const CreateCampaignModal = ({ onClose, onSuccess }: CreateCampaignModalProps) =
       setError('Please enter a subject line');
       return;
     }
-    setStep('recipients');
+
+    // Navigate to templates page with campaign context
+    const params = new URLSearchParams({
+      createMode: 'true',
+      name: campaignName,
+      subject: subject
+    });
+    navigate(`/app/templates?${params.toString()}`);
+    onClose();
   };
 
-  const handleNextFromRecipients = () => {
-    if (!selectedGroupId) {
-      setError('Please select a recipient group');
+  const handleCreateWithCustomHtml = async () => {
+    if (!campaignName.trim()) {
+      setError('Please enter a campaign name');
       return;
     }
-    setStep('review');
-  };
-
-  const handleCreateAndSend = async () => {
-    if (!user || !selectedTemplate || !selectedGroupId) return;
+    if (!subject.trim()) {
+      setError('Please enter a subject line');
+      return;
+    }
+    if (!customHtml.trim()) {
+      setError('Please enter HTML content');
+      return;
+    }
 
     setLoading(true);
     setError('');
 
     try {
-      // Replace editable sections with user content
-      const finalHtml = replaceEditableSections(selectedTemplate.htmlContent, editedContent);
-      
-      // Fetch contacts from selected group
-      const { data: groupMembers, error: groupError } = await supabase
-        .from('contact_group_members')
-        .select('contact_id')
-        .eq('group_id', selectedGroupId);
-      
-      if (groupError) throw groupError;
-      
-      const contactIds = groupMembers.map(m => m.contact_id);
-      
-      const { data: contacts, error: contactsError } = await supabase
-        .from('contacts')
-        .select('*')
-        .in('id', contactIds)
-        .eq('status', 'active');
-      
-      if (contactsError) throw contactsError;
-
-      // Create campaign
-      const { data: campaign, error: campaignError } = await supabase
+      // Create draft campaign with custom HTML
+      const { error: insertError } = await supabase
         .from('campaigns')
         .insert({
-          user_id: user.id,
+          user_id: user?.id,
           name: campaignName,
           subject: subject,
-          content: { html: finalHtml },
+          content: {
+            html: customHtml
+          },
           status: 'draft',
-          recipients_count: contacts?.length || 0
-        })
-        .select()
-        .single();
+          from_email: user?.email,
+          from_name: 'Mail Wizard'
+        });
 
-      if (campaignError) throw campaignError;
+      if (insertError) throw insertError;
 
-      // Send campaign
-      const { data, error: sendError } = await supabase.functions.invoke('send-email', {
-        body: {
-          campaign_id: campaign.id,
-          from_email: user.email,
-          subject: subject,
-          html_body: finalHtml,
-          recipients: contacts?.map(c => ({
-            email: c.email,
-            contact_id: c.id,
-            first_name: c.first_name,
-            last_name: c.last_name,
-            company: c.company,
-            role: c.role,
-            industry: c.industry
-          })) || []
-        }
-      });
-
-      if (sendError) throw sendError;
-
-      toast.success(`Campaign sent to ${contacts?.length || 0} recipients!`);
+      toast.success('Campaign draft created successfully!');
       onSuccess();
       onClose();
-    } catch (error: any) {
-      console.error('Campaign error:', error);
-      setError(error.message || 'Failed to create campaign');
-      toast.error('Failed to send campaign');
+    } catch (err: any) {
+      console.error('Error creating campaign:', err);
+      setError(err.message || 'Failed to create campaign');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-black p-6 z-10">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-serif font-bold">Create Campaign</h2>
-              <div className="flex items-center gap-2 mt-2">
-                <span className={`text-sm ${step === 'template' ? 'text-[#f3ba42] font-semibold' : 'text-gray-400'}`}>
-                  1. Template
-                </span>
-                <span className="text-gray-300">→</span>
-                <span className={`text-sm ${step === 'edit' ? 'text-[#f3ba42] font-semibold' : 'text-gray-400'}`}>
-                  2. Edit
-                </span>
-                <span className="text-gray-300">→</span>
-                <span className={`text-sm ${step === 'recipients' ? 'text-[#f3ba42] font-semibold' : 'text-gray-400'}`}>
-                  3. Recipients
-                </span>
-                <span className="text-gray-300">→</span>
-                <span className={`text-sm ${step === 'review' ? 'text-[#f3ba42] font-semibold' : 'text-gray-400'}`}>
-                  4. Review
-                </span>
-              </div>
+        <div className="border-b border-black">
+          <div className="p-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-serif font-bold">Create New Campaign</h2>
+              <button onClick={onClose} className="text-gray-500 hover:text-black">
+                ✕
+              </button>
             </div>
-            <button onClick={onClose} className="text-gray-500 hover:text-black">
-              ✕
-            </button>
           </div>
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto flex-1">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4">
               {error}
             </div>
           )}
 
-          {/* Step 1: Template Selection */}
-          {step === 'template' && (
-            <TemplateSelector
-              onSelect={handleTemplateSelect}
-              selectedTemplateId={selectedTemplateId}
-            />
-          )}
+          <div className="space-y-6">
+            {/* Campaign Name */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Campaign Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={campaignName}
+                onChange={(e) => setCampaignName(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#57377d] focus:border-transparent"
+                placeholder="e.g., Summer Newsletter 2025"
+              />
+            </div>
 
-          {/* Step 2: Edit Content */}
-          {step === 'edit' && selectedTemplate && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-serif font-bold">Edit Campaign Content</h2>
+            {/* Subject Line */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Subject Line <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#57377d] focus:border-transparent"
+                placeholder="Enter email subject line"
+              />
+            </div>
+
+            {/* Content Choice */}
+            <div>
+              <label className="block text-sm font-medium mb-3">
+                Email Content <span className="text-red-500">*</span>
+              </label>
               
-              <div>
-                <label className="block text-sm font-medium mb-2">Campaign Name *</label>
-                <input
-                  type="text"
-                  value={campaignName}
-                  onChange={(e) => setCampaignName(e.target.value)}
-                  className="input-base w-full"
-                  placeholder="e.g., Summer Newsletter 2025"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Subject Line *</label>
-                <input
-                  type="text"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  className="input-base w-full"
-                  placeholder="Enter email subject line"
-                />
-                {hasPersonalization && (
-                  <p className="text-xs text-gray-500 mt-1">
-  💡 You can use merge fields: {"{{firstname}}"}, {"{{company}}"}, {"{{role}}"}, etc.
-</p>
-                )}
-              </div>
-
-              <div className="border-t border-gray-200 pt-4">
-                <h3 className="font-semibold mb-3">Editable Sections</h3>
-                {editableSections.map((section) => (
-                  <div key={section.id} className="mb-4">
-                    <label className="block text-sm font-medium mb-2 capitalize">
-                      {section.id.replace(/_/g, ' ')}
-                    </label>
-                    {section.id.includes('content') || section.id.includes('description') || section.id.includes('message') ? (
-                      <textarea
-                        value={editedContent[section.id] || ''}
-                        onChange={(e) => setEditedContent({ ...editedContent, [section.id]: e.target.value })}
-                        className="input-base w-full"
-                        rows={3}
-                        placeholder={`Enter ${section.id.replace(/_/g, ' ')}`}
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        value={editedContent[section.id] || ''}
-                        onChange={(e) => setEditedContent({ ...editedContent, [section.id]: e.target.value })}
-                        className="input-base w-full"
-                        placeholder={`Enter ${section.id.replace(/_/g, ' ')}`}
-                      />
-                    )}
+              <div className="space-y-3">
+                {/* Template Option */}
+                <label className="flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all hover:border-[#f3ba42]">
+                  <input
+                    type="radio"
+                    name="contentChoice"
+                    value="template"
+                    checked={contentChoice === 'template'}
+                    onChange={(e) => setContentChoice(e.target.value as 'template')}
+                    className="mt-1 mr-3"
+                  />
+                  <div className="flex-1">
+                    <div className="font-semibold mb-1">Choose from Available Templates</div>
+                    <div className="text-sm text-gray-600">
+                      Browse our professionally designed templates and customize them to fit your brand.
+                    </div>
                   </div>
-                ))}
+                </label>
+
+                {/* Custom HTML Option */}
+                <label className="flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all hover:border-[#f3ba42]">
+                  <input
+                    type="radio"
+                    name="contentChoice"
+                    value="custom"
+                    checked={contentChoice === 'custom'}
+                    onChange={(e) => setContentChoice(e.target.value as 'custom')}
+                    className="mt-1 mr-3"
+                  />
+                  <div className="flex-1">
+                    <div className="font-semibold mb-1">Enter Custom HTML</div>
+                    <div className="text-sm text-gray-600">
+                      Paste your own HTML code for complete design control.
+                    </div>
+                  </div>
+                </label>
               </div>
             </div>
-          )}
 
-          {/* Step 3: Select Recipients */}
-          {step === 'recipients' && (
-            <RecipientSelector
-              onSelect={setSelectedGroupId}
-              selectedGroupId={selectedGroupId}
-              templateHasPersonalization={hasPersonalization}
-            />
-          )}
-
-          {/* Step 4: Review & Send */}
-          {step === 'review' && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-serif font-bold">Review & Send</h2>
-              
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
-                <div>
-                  <span className="text-sm text-gray-600">Campaign Name:</span>
-                  <p className="font-semibold">{campaignName}</p>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">Subject Line:</span>
-                  <p className="font-semibold">{subject}</p>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">Template:</span>
-                  <p className="font-semibold">{selectedTemplate?.name}</p>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">Recipients:</span>
-                  <p className="font-semibold">Selected contact group</p>
-                </div>
+            {/* Custom HTML Textarea (conditional) */}
+            {contentChoice === 'custom' && (
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  HTML Content <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={customHtml}
+                  onChange={(e) => setCustomHtml(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#57377d] focus:border-transparent font-mono text-sm"
+                  rows={12}
+                  placeholder="Paste your HTML code here..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Paste complete HTML including &lt;html&gt;, &lt;head&gt;, and &lt;body&gt; tags.
+                </p>
               </div>
-
-              {hasPersonalization && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                  <p className="text-sm text-amber-800 font-medium">
-                    📧 This campaign uses personalization
-                  </p>
-                  <p className="text-sm text-amber-700 mt-1">
-                    Each recipient will receive a personalized email with their name, company, and other details.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-white border-t border-black p-6 flex items-center justify-between">
-          <div>
-            {step !== 'template' && (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  if (step === 'edit') setStep('template');
-                  if (step === 'recipients') setStep('edit');
-                  if (step === 'review') setStep('recipients');
-                }}
-              >
-                ← Back
-              </Button>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="tertiary" onClick={onClose}>
-              Cancel
+        <div className="border-t border-black p-6 flex items-center justify-between bg-gray-50">
+          <Button variant="tertiary" onClick={onClose}>
+            Cancel
+          </Button>
+          
+          {contentChoice === 'template' ? (
+            <Button 
+              variant="primary" 
+              onClick={handleBrowseTemplates}
+            >
+              Browse Templates →
             </Button>
-            {step === 'template' && (
-              <Button variant="primary" onClick={handleNextFromTemplate}>
-                Next: Edit Content →
-              </Button>
-            )}
-            {step === 'edit' && (
-              <Button variant="primary" onClick={handleNextFromEdit}>
-                Next: Select Recipients →
-              </Button>
-            )}
-            {step === 'recipients' && (
-              <Button variant="primary" onClick={handleNextFromRecipients}>
-                Next: Review →
-              </Button>
-            )}
-            {step === 'review' && (
-              <Button
-                variant="primary"
-                onClick={handleCreateAndSend}
-                loading={loading}
-                disabled={loading}
-              >
-                Send Campaign 🚀
-              </Button>
-            )}
-          </div>
+          ) : (
+            <Button
+              variant="primary"
+              onClick={handleCreateWithCustomHtml}
+              loading={loading}
+              disabled={loading}
+            >
+              Create Campaign Draft
+            </Button>
+          )}
         </div>
       </div>
     </div>
