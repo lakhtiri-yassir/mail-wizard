@@ -664,3 +664,21 @@ export function extractMergeFields(htmlContent: string): string[] {
   const matches = htmlContent.matchAll(/\{\{MERGE:([^}]+)\}\}/g);
   return Array.from(matches).map(match => match[1]);
 }
+// Extract all editable sections from an HTML template.
+// Editable sections are defined as: <!-- editable:id --> ... <!-- endeditable -->
+export function extractEditableSections(html: string) {
+  const sections: { id: string; content: string }[] = [];
+
+  const regex = /<!--\s*editable:([\w_-]+)\s*-->([\s\S]*?)<!--\s*endeditable\s*-->/g;
+
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    sections.push({
+      id: match[1],
+      content: match[2].trim(),
+    });
+  }
+
+  return sections;
+}
+
