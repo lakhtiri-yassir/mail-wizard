@@ -478,8 +478,8 @@ const CreateCampaignModal = ({ onClose, onSuccess }: CreateCampaignModalProps) =
                 />
                 {hasPersonalization && (
                   <p className="text-xs text-gray-500 mt-1">
-                    💡 You can use merge fields: {'{'}{'{'}}firstname{'}'}{'}'}, {'{'}{'{'}}company{'}'}{'}'}, {'{'}{'{'}}role{'}'}{'}'}, etc.
-                  </p>
+  💡 You can use merge fields: {"{{firstname}}"}, {"{{company}}"}, {"{{role}}"}, etc.
+</p>
                 )}
               </div>
 
