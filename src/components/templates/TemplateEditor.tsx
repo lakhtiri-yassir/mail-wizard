@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { FileText, Lock, ArrowLeft } from 'lucide-react';  // Add FileText
+import { AppLayout } from '../app/AppLayout';  // Add this whole line
+import { supabase } from '../../lib/supabase';  // Add this whole line
 import { getTemplateById, extractMergeFields } from '../../data/emailTemplates';
 import { Button } from '../ui/Button';
 import { Lock, ArrowLeft } from 'lucide-react';
