@@ -1,11 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { EmailTemplate, getTemplateById, extractMergeFields } from '../../data/emailTemplates';
-import { TemplatePreview } from './TemplatePreview';
+import { getTemplateById, extractMergeFields } from '../../data/emailTemplates';
 import { Button } from '../ui/Button';
-import { Lock, Crown, ArrowLeft } from 'lucide-react';
+import { Lock, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
+
+// Helper function to extract editable sections from HTML comments
+function extractEditableSections(html: string): Array<{ id: string; label: string; type: 'text' | 'textarea'; defaultContent: string }> {
+  const sections: Array<{ id: string; label: string; type: 'text' | 'textarea'; defaultContent: string }> = [];
+  
+  // Extract sections marked as {{EDITABLE:section_name}}
+  const regex = /\{\{EDITABLE:(\w+)\}\}/g;
+  let match;
+  
+  while ((match = regex.exec(html)) !== null) {
+    const id = match[1];
+    // Create a readable label from the ID
+    const label = id.split('_').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+    
+    // Determine if it should be textarea based on common patterns
+    const isLongContent = id.includes('content') || id.includes('description') || id.includes('message') || id.includes('intro');
+    
+    sections.push({
+      id,
+      label,
+      type: isLongContent ? 'textarea' : 'text',
+      defaultContent: ''
+    });
+  }
+  
+  return sections;
+}
 
 export const TemplateEditor: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -13,7 +41,8 @@ export const TemplateEditor: React.FC = () => {
   const navigate = useNavigate();
   const { profile } = useAuth();
   
-  const [template, setTemplate] = useState<EmailTemplate | null>(null);
+  const [template, setTemplate] = useState<any>(null);
+  const [editableSections, setEditableSections] = useState<Array<{ id: string; label: string; type: 'text' | 'textarea'; defaultContent: string }>>([]);
   const [editedContent, setEditedContent] = useState<Record<string, string>>({});
   const [campaignName, setCampaignName] = useState('');
   const [subject, setSubject] = useState('');
@@ -26,9 +55,13 @@ export const TemplateEditor: React.FC = () => {
       if (foundTemplate) {
         setTemplate(foundTemplate);
         
+        // Extract editable sections from the HTML
+        const sections = extractEditableSections(foundTemplate.htmlContent);
+        setEditableSections(sections);
+        
         // Initialize with default content
         const defaults: Record<string, string> = {};
-        foundTemplate.editableSections.forEach(section => {
+        sections.forEach(section => {
           defaults[section.id] = section.defaultContent;
         });
         setEditedContent(defaults);
@@ -53,7 +86,7 @@ export const TemplateEditor: React.FC = () => {
       return;
     }
 
-    // Save to localStorage for now (you'll replace this with Supabase)
+    // Save to localStorage for now
     const campaignData = {
       name: campaignName,
       subject,
@@ -64,8 +97,10 @@ export const TemplateEditor: React.FC = () => {
     
     localStorage.setItem('draft_campaign', JSON.stringify(campaignData));
     
-    // Navigate to recipient selection
-    navigate('/app/campaigns/create?step=recipients');
+    toast.success('Campaign draft saved!');
+    
+    // Navigate back to campaigns
+    navigate('/app/campaigns');
   };
 
   const generateFinalHtml = (): string => {
@@ -73,9 +108,10 @@ export const TemplateEditor: React.FC = () => {
     
     let finalHtml = template.htmlContent;
     
-    template.editableSections.forEach(section => {
-      const content = editedContent[section.id] || section.defaultContent;
-      const regex = new RegExp(`\\{\\{${section.id}\\}\\}`, 'g');
+    // Replace all {{EDITABLE:section_id}} with actual content
+    editableSections.forEach(section => {
+      const content = editedContent[section.id] || section.defaultContent || '[Content]';
+      const regex = new RegExp(`\\{\\{EDITABLE:${section.id}\\}\\}`, 'g');
       finalHtml = finalHtml.replace(regex, content);
     });
     
@@ -87,17 +123,17 @@ export const TemplateEditor: React.FC = () => {
 
   if (!template) {
     return (
-      <div className="p-8">
-        <p>Template not found</p>
-        <Button onClick={() => navigate('/app/templates')}>
-          Back to Templates
-        </Button>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
+        <div className="text-center">
+          <div className="animate-spin w-12 h-12 border-4 border-gold border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="text-gray-600">Loading template...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-black px-6 py-4">
         <div className="flex items-center justify-between">
@@ -120,7 +156,7 @@ export const TemplateEditor: React.FC = () => {
             size="md"
             onClick={handleSaveAndContinue}
           >
-            Continue to Recipients
+            Save Campaign Draft
           </Button>
         </div>
       </div>
@@ -131,7 +167,7 @@ export const TemplateEditor: React.FC = () => {
           <div className="flex items-center gap-3">
             <Lock size={20} className="text-amber-600" />
             <p className="text-sm text-amber-800">
-              This template includes personalization fields ({{firstname}}, {{company}}). 
+              This template includes personalization fields ({mergeFields.join(', ')}). 
               <span className="font-semibold"> Upgrade to Pro Plus</span> to use these features.
             </p>
             <Button
@@ -147,8 +183,8 @@ export const TemplateEditor: React.FC = () => {
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left: Editor Form */}
-        <div className="w-1/2 border-r border-gray-300 overflow-auto p-6">
-          <div className="space-y-6">
+        <div className="w-1/2 border-r border-gray-300 overflow-auto p-6 bg-white">
+          <div className="space-y-6 max-w-2xl">
             {/* Campaign Details */}
             <div>
               <h2 className="text-lg font-serif font-bold mb-4">Campaign Details</h2>
@@ -181,84 +217,67 @@ export const TemplateEditor: React.FC = () => {
             </div>
 
             {/* Editable Content */}
-            <div>
-              <h2 className="text-lg font-serif font-bold mb-4">Edit Content</h2>
-              <div className="space-y-4">
-                {template.editableSections.map((section) => (
-                  <div key={section.id}>
-                    <label className="block text-sm font-medium mb-1">
-                      {section.label}
-                    </label>
-                    {section.type === 'text' ? (
-                      <textarea
-                        value={editedContent[section.id] || ''}
-                        onChange={(e) => handleContentChange(section.id, e.target.value)}
-                        className="input-base w-full"
-                        rows={3}
-                        placeholder={section.placeholder}
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        value={editedContent[section.id] || ''}
-                        onChange={(e) => handleContentChange(section.id, e.target.value)}
-                        className="input-base w-full"
-                        placeholder={section.placeholder}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Merge Fields (Pro Plus Only) */}
-            {hasPersonalization && (
+            {editableSections.length > 0 ? (
               <div>
-                <h2 className="text-lg font-serif font-bold mb-4 flex items-center gap-2">
+                <h2 className="text-lg font-serif font-bold mb-4">Edit Content</h2>
+                <div className="space-y-4">
+                  {editableSections.map((section) => (
+                    <div key={section.id}>
+                      <label className="block text-sm font-medium mb-1">
+                        {section.label}
+                      </label>
+                      {section.type === 'textarea' ? (
+                        <textarea
+                          value={editedContent[section.id] || ''}
+                          onChange={(e) => handleContentChange(section.id, e.target.value)}
+                          className="input-base w-full"
+                          rows={4}
+                          placeholder={`Enter ${section.label.toLowerCase()}...`}
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={editedContent[section.id] || ''}
+                          onChange={(e) => handleContentChange(section.id, e.target.value)}
+                          className="input-base w-full"
+                          placeholder={`Enter ${section.label.toLowerCase()}...`}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  This template has no editable sections. You can use it as-is or customize it by editing the HTML.
+                </p>
+              </div>
+            )}
+
+            {/* Personalization Info */}
+            {hasPersonalization && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-purple-900 mb-2">
                   Personalization Fields
-                  {!isPlusUser && <Lock size={16} className="text-amber-600" />}
-                </h2>
-                
-                {isPlusUser ? (
-                  <div className="space-y-2">
-                    <p className="text-sm text-gray-600 mb-3">
-                      This template uses the following merge fields:
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {mergeFields.map(field => (
-                        <span 
-                          key={field}
-                          className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-mono"
-                        >
-                          {field}
-                        </span>
-                      ))}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      These will be automatically replaced with contact data when sending.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-start gap-3">
-                      <Crown className="text-amber-500 mt-1" size={20} />
-                      <div>
-                        <p className="font-medium text-gray-900 mb-1">
-                          Pro Plus Feature
-                        </p>
-                        <p className="text-sm text-gray-600 mb-3">
-                          Personalize emails with contact data like names, companies, and roles.
-                        </p>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => navigate('/app/settings?tab=billing')}
-                        >
-                          Upgrade to Pro Plus
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
+                </h3>
+                <p className="text-sm text-purple-800 mb-2">
+                  This template supports the following merge fields:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {mergeFields.map((field) => (
+                    <span
+                      key={field}
+                      className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded"
+                    >
+                      {field}
+                    </span>
+                  ))}
+                </div>
+                {!isPlusUser && (
+                  <p className="text-xs text-purple-600 mt-2">
+                    * Upgrade to Pro Plus to use personalization features
+                  </p>
                 )}
               </div>
             )}
@@ -266,11 +285,19 @@ export const TemplateEditor: React.FC = () => {
         </div>
 
         {/* Right: Live Preview */}
-        <div className="w-1/2 bg-gray-50 overflow-auto p-6">
-          <TemplatePreview 
-            template={template} 
-            editedContent={editedContent}
-          />
+        <div className="w-1/2 overflow-auto p-6 bg-gray-100">
+          <div className="max-w-2xl mx-auto">
+            <div className="bg-white border border-gray-300 rounded-lg overflow-hidden shadow-lg">
+              <div className="bg-gray-200 px-4 py-2 border-b border-gray-300">
+                <p className="text-sm font-semibold text-gray-700">Live Preview</p>
+              </div>
+              <div 
+                className="p-6 overflow-auto"
+                style={{ minHeight: '400px' }}
+                dangerouslySetInnerHTML={{ __html: generateFinalHtml() }}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
