@@ -1,10 +1,10 @@
 // ============================================================================
-// ENHANCED TemplateEditor with Live Preview
+// FIXED: TemplateEditor with Proper HTML Preview Rendering
 // File: src/components/templates/TemplateEditor.tsx
 // ============================================================================
-// This replaces the current TemplateEditor.tsx to add a live preview panel
+// This version properly renders HTML with styles in an iframe for isolation
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FileText, Lock, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { AppLayout } from '../app/AppLayout';
@@ -13,9 +13,8 @@ import { Button } from '../ui/Button';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
-import DOMPurify from 'dompurify';
 
-// Helper function to extract editable sections from HTML comments
+// Helper function to extract editable sections
 function extractEditableSections(html: string): Array<{ id: string; label: string; type: 'text' | 'textarea'; defaultContent: string }> {
   const sections: Array<{ id: string; label: string; type: 'text' | 'textarea'; defaultContent: string }> = [];
   
@@ -28,7 +27,7 @@ function extractEditableSections(html: string): Array<{ id: string; label: strin
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
     
-    const isLongContent = id.includes('content') || id.includes('description') || id.includes('message') || id.includes('intro');
+    const isLongContent = id.includes('content') || id.includes('description') || id.includes('message') || id.includes('intro') || id.includes('text') || id.includes('paragraph');
     
     sections.push({
       id,
@@ -46,6 +45,7 @@ export const TemplateEditor: React.FC = () => {
   const templateId = searchParams.get('template');
   const navigate = useNavigate();
   const { profile, user } = useAuth();
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   
   const isCreationMode = searchParams.get('createMode') === 'true';
   const prefilledName = searchParams.get('name') || '';
@@ -57,7 +57,7 @@ export const TemplateEditor: React.FC = () => {
   const [campaignName, setCampaignName] = useState(prefilledName);
   const [subject, setSubject] = useState(prefilledSubject);
   const [loading, setLoading] = useState(false);
-  const [showPreview, setShowPreview] = useState(true); // New state for preview toggle
+  const [showPreview, setShowPreview] = useState(true);
   
   const isPlusUser = profile?.plan_type === 'pro_plus';
 
@@ -78,6 +78,20 @@ export const TemplateEditor: React.FC = () => {
     }
   }, [templateId]);
 
+  // Update iframe preview whenever content changes
+  useEffect(() => {
+    if (template && iframeRef.current) {
+      const previewHtml = getPreviewHtml();
+      const iframeDoc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document;
+      
+      if (iframeDoc) {
+        iframeDoc.open();
+        iframeDoc.write(previewHtml);
+        iframeDoc.close();
+      }
+    }
+  }, [editedContent, template, subject]);
+
   const handleContentChange = (sectionId: string, value: string) => {
     setEditedContent(prev => ({
       ...prev,
@@ -93,15 +107,29 @@ export const TemplateEditor: React.FC = () => {
     
     // Replace all {{EDITABLE:section_id}} with actual content
     editableSections.forEach(section => {
-      const content = editedContent[section.id] || section.defaultContent || `[Enter ${section.label}]`;
+      const content = editedContent[section.id] || section.defaultContent || `<span style="background: #fff3cd; padding: 2px 4px;">[Enter ${section.label}]</span>`;
       const regex = new RegExp(`\\{\\{EDITABLE:${section.id}\\}\\}`, 'g');
       previewHtml = previewHtml.replace(regex, content);
     });
     
-    // Also replace subject in preview if it's in the template
+    // Replace subject if present
     previewHtml = previewHtml.replace(/\{\{SUBJECT\}\}/g, subject || '[Enter subject]');
     
-    return DOMPurify.sanitize(previewHtml);
+    // Replace merge fields with placeholder examples
+    previewHtml = previewHtml.replace(/\{\{MERGE:first_name\}\}/g, 'John');
+    previewHtml = previewHtml.replace(/\{\{MERGE:last_name\}\}/g, 'Doe');
+    previewHtml = previewHtml.replace(/\{\{MERGE:email\}\}/g, 'john.doe@example.com');
+    previewHtml = previewHtml.replace(/\{\{MERGE:company\}\}/g, 'Acme Corp');
+    previewHtml = previewHtml.replace(/\{\{firstname\}\}/g, 'John');
+    previewHtml = previewHtml.replace(/\{\{lastname\}\}/g, 'Doe');
+    previewHtml = previewHtml.replace(/\{\{email\}\}/g, 'john.doe@example.com');
+    previewHtml = previewHtml.replace(/\{\{company\}\}/g, 'Acme Corp');
+    previewHtml = previewHtml.replace(/\{\{role\}\}/g, 'Marketing Director');
+    
+    // Replace unsubscribe URL
+    previewHtml = previewHtml.replace(/\{\{UNSUBSCRIBE_URL\}\}/g, '#');
+    
+    return previewHtml;
   };
 
   const handleSaveAndContinue = async () => {
@@ -273,9 +301,9 @@ export const TemplateEditor: React.FC = () => {
                       <textarea
                         value={editedContent[section.id] || ''}
                         onChange={(e) => handleContentChange(section.id, e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#57377d] focus:border-transparent"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#57377d] focus:border-transparent font-sans"
                         rows={5}
-                        placeholder={`Enter ${section.label.replace(/_/g, ' ')}`}
+                        placeholder={`Enter ${section.label.toLowerCase()}`}
                       />
                     ) : (
                       <input
@@ -283,7 +311,7 @@ export const TemplateEditor: React.FC = () => {
                         value={editedContent[section.id] || ''}
                         onChange={(e) => handleContentChange(section.id, e.target.value)}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#57377d] focus:border-transparent"
-                        placeholder={`Enter ${section.label.replace(/_/g, ' ')}`}
+                        placeholder={`Enter ${section.label.toLowerCase()}`}
                       />
                     )}
                   </div>
@@ -319,10 +347,10 @@ export const TemplateEditor: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Side: Live Preview */}
+          {/* Right Side: Live Preview in Iframe */}
           {showPreview && (
             <div className="sticky top-8 self-start">
-              <div className="bg-white border-2 border-black rounded-lg overflow-hidden">
+              <div className="bg-white border-2 border-black rounded-lg overflow-hidden shadow-lg">
                 <div className="bg-[#57377d] text-white px-4 py-3 border-b-2 border-black">
                   <div className="flex items-center gap-2">
                     <Eye size={18} />
@@ -330,13 +358,16 @@ export const TemplateEditor: React.FC = () => {
                   </div>
                   <p className="text-xs text-white/80 mt-1">Updates as you type</p>
                 </div>
-                <div 
-                  className="p-4 overflow-auto bg-gray-50"
-                  style={{ maxHeight: 'calc(100vh - 200px)' }}
-                >
-                  <div 
-                    className="bg-white"
-                    dangerouslySetInnerHTML={{ __html: getPreviewHtml() }}
+                <div className="bg-gray-100 p-2">
+                  <iframe
+                    ref={iframeRef}
+                    title="Email Preview"
+                    className="w-full bg-white border-2 border-gray-300 rounded"
+                    style={{ 
+                      height: 'calc(100vh - 220px)',
+                      minHeight: '500px'
+                    }}
+                    sandbox="allow-same-origin"
                   />
                 </div>
               </div>
