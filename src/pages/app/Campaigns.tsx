@@ -20,17 +20,42 @@ interface Campaign {
   created_at: string;
 }
 
+interface Contact {
+  id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  status: string;
+}
+
+interface Segment {
+  id: string;
+  name: string;
+  description: string | null;
+}
+
 export function Campaigns() {
   const { user } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [segments, setSegments] = useState<Segment[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Send modal state
+  const [sendMode, setSendMode] = useState<'all' | 'groups' | 'contacts'>('all');
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
+  const [selectedSegments, setSelectedSegments] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (user) {
       fetchCampaigns();
+      fetchContacts();
+      fetchSegments();
     }
   }, [user]);
 
@@ -49,38 +74,129 @@ export function Campaigns() {
     }
   };
 
-  const handleSendCampaign = async (campaignId: string) => {
-    const campaign = campaigns.find(c => c.id === campaignId);
-    if (!campaign) return;
+  const fetchContacts = async () => {
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('user_id', user?.id)
+      .eq('status', 'active')
+      .order('email');
 
-    if (!confirm(`Send "${campaign.name}" to all contacts?`)) return;
+    if (error) {
+      console.error('Error fetching contacts:', error);
+    } else {
+      setContacts(data || []);
+    }
+  };
 
-    setSending(campaignId);
-    const toastId = toast.loading('Sending campaign...');
+  const fetchSegments = async () => {
+    const { data, error } = await supabase
+      .from('segments')
+      .select('*')
+      .eq('user_id', user?.id)
+      .order('name');
 
-    try {
-      // Get all active contacts
-      const { data: contacts, error: contactsError } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('user_id', user?.id)
-        .eq('status', 'active');
+    if (error) {
+      console.error('Error fetching segments:', error);
+    } else {
+      setSegments(data || []);
+    }
+  };
 
-      if (contactsError) throw contactsError;
+  const handleOpenSendModal = (campaign: Campaign) => {
+    setSelectedCampaign(campaign);
+    setSelectedContacts(new Set());
+    setSelectedSegments(new Set());
+    setSendMode('all');
+    setShowSendModal(true);
+  };
 
-      if (!contacts || contacts.length === 0) {
-        throw new Error('No active contacts found');
+  const handleToggleContact = (contactId: string) => {
+    const newSelected = new Set(selectedContacts);
+    if (newSelected.has(contactId)) {
+      newSelected.delete(contactId);
+    } else {
+      newSelected.add(contactId);
+    }
+    setSelectedContacts(newSelected);
+  };
+
+  const handleToggleSegment = (segmentId: string) => {
+    const newSelected = new Set(selectedSegments);
+    if (newSelected.has(segmentId)) {
+      newSelected.delete(segmentId);
+    } else {
+      newSelected.add(segmentId);
+    }
+    setSelectedSegments(newSelected);
+  };
+
+  const handleSelectAllContacts = () => {
+    if (selectedContacts.size === contacts.length) {
+      setSelectedContacts(new Set());
+    } else {
+      setSelectedContacts(new Set(contacts.map(c => c.id)));
+    }
+  };
+
+  const getRecipientList = async (): Promise<Contact[]> => {
+    if (sendMode === 'all') {
+      return contacts;
+    }
+
+    if (sendMode === 'contacts') {
+      return contacts.filter(c => selectedContacts.has(c.id));
+    }
+
+    if (sendMode === 'groups') {
+      const segmentIds = Array.from(selectedSegments);
+      if (segmentIds.length === 0) {
+        return [];
       }
 
-      // Call send-email Edge Function
+      const { data, error } = await supabase
+        .from('segment_contacts')
+        .select('contact_id')
+        .in('segment_id', segmentIds);
+
+      if (error) {
+        console.error('Error fetching segment contacts:', error);
+        return [];
+      }
+
+      const contactIds = data.map(sc => sc.contact_id);
+      return contacts.filter(c => contactIds.includes(c.id));
+    }
+
+    return [];
+  };
+
+  const handleSendCampaign = async () => {
+    if (!selectedCampaign) return;
+
+    const recipients = await getRecipientList();
+
+    if (recipients.length === 0) {
+      toast.error('No recipients selected');
+      return;
+    }
+
+    const confirmMessage = `Send "${selectedCampaign.name}" to ${recipients.length} recipient(s)?`;
+    if (!confirm(confirmMessage)) return;
+
+    setSending(selectedCampaign.id);
+    setShowSendModal(false);
+    const toastId = toast.loading(`Sending to ${recipients.length} recipient(s)...`);
+
+    try {
       const { data, error } = await supabase.functions.invoke('send-email', {
         body: {
-          campaign_id: campaign.id,
+          campaign_id: selectedCampaign.id,
           from_email: user?.email,
           from_name: user?.user_metadata?.full_name || 'Mail Wizard',
-          subject: campaign.subject,
-          html_body: campaign.content.html,
-          recipients: contacts.map(contact => ({
+          subject: selectedCampaign.subject,
+          html_body: selectedCampaign.content.html,
+          recipients: recipients.map(contact => ({
             email: contact.email,
             contact_id: contact.id,
             first_name: contact.first_name,
@@ -208,7 +324,7 @@ export function Campaigns() {
                         variant="primary"
                         size="sm"
                         icon={Send}
-                        onClick={() => handleSendCampaign(campaign.id)}
+                        onClick={() => handleOpenSendModal(campaign)}
                         loading={sending === campaign.id}
                         disabled={sending !== null}
                       >
@@ -227,6 +343,133 @@ export function Campaigns() {
             onClose={() => setShowCreateModal(false)}
             onSuccess={fetchCampaigns}
           />
+        )}
+
+        {showSendModal && selectedCampaign && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+              <div className="border-b border-black p-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-serif font-bold">Send Campaign: {selectedCampaign.name}</h2>
+                  <button onClick={() => setShowSendModal(false)} className="text-gray-500 hover:text-black">
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6 overflow-y-auto flex-1">
+                <div className="mb-6">
+                  <label className="block text-sm font-medium mb-3">Send To:</label>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setSendMode('all')}
+                      className={`px-4 py-2 rounded-full font-medium transition-colors ${
+                        sendMode === 'all' 
+                          ? 'bg-gold text-black' 
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      All Contacts ({contacts.length})
+                    </button>
+                    <button
+                      onClick={() => setSendMode('groups')}
+                      className={`px-4 py-2 rounded-full font-medium transition-colors ${
+                        sendMode === 'groups' 
+                          ? 'bg-gold text-black' 
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      Select Groups
+                    </button>
+                    <button
+                      onClick={() => setSendMode('contacts')}
+                      className={`px-4 py-2 rounded-full font-medium transition-colors ${
+                        sendMode === 'contacts' 
+                          ? 'bg-gold text-black' 
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      Select Contacts
+                    </button>
+                  </div>
+                </div>
+
+                {sendMode === 'groups' && (
+                  <div className="mb-6">
+                    <h3 className="font-medium mb-3">Select Groups ({selectedSegments.size} selected)</h3>
+                    <div className="border border-gray-300 rounded-lg max-h-60 overflow-y-auto">
+                      {segments.length === 0 ? (
+                        <p className="text-gray-500 p-4 text-center text-sm">No groups available</p>
+                      ) : (
+                        segments.map((segment) => (
+                          <label key={segment.id} className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
+                            <input
+                              type="checkbox"
+                              checked={selectedSegments.has(segment.id)}
+                              onChange={() => handleToggleSegment(segment.id)}
+                              className="mr-3 w-4 h-4"
+                            />
+                            <div>
+                              <p className="font-medium text-sm">{segment.name}</p>
+                              {segment.description && (
+                                <p className="text-xs text-gray-600">{segment.description}</p>
+                              )}
+                            </div>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {sendMode === 'contacts' && (
+                  <div className="mb-6">
+                    <div className="flex justify-between items-center mb-3">
+                      <h3 className="font-medium">Select Contacts ({selectedContacts.size} selected)</h3>
+                      <button
+                        onClick={handleSelectAllContacts}
+                        className="text-sm text-gold hover:text-yellow-600 font-medium"
+                      >
+                        {selectedContacts.size === contacts.length ? 'Deselect All' : 'Select All'}
+                      </button>
+                    </div>
+                    <div className="border border-gray-300 rounded-lg max-h-60 overflow-y-auto">
+                      {contacts.map((contact) => (
+                        <label key={contact.id} className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
+                          <input
+                            type="checkbox"
+                            checked={selectedContacts.has(contact.id)}
+                            onChange={() => handleToggleContact(contact.id)}
+                            className="mr-3 w-4 h-4"
+                          />
+                          <div>
+                            <p className="font-medium text-sm">
+                              {contact.first_name} {contact.last_name}
+                            </p>
+                            <p className="text-xs text-gray-600">{contact.email}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-black p-6 flex items-center justify-between bg-gray-50">
+                <Button variant="tertiary" onClick={() => setShowSendModal(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleSendCampaign}
+                  loading={sending === selectedCampaign.id}
+                  disabled={sending !== null}
+                >
+                  Send Campaign
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </AppLayout>

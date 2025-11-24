@@ -19,11 +19,16 @@ export function Dashboard() {
   useEffect(() => {
     if (user) {
       fetchDashboardData();
+      
+      // Auto-refresh every 30 seconds
+      const interval = setInterval(fetchDashboardData, 30000);
+      return () => clearInterval(interval);
     }
   }, [user]);
 
   const fetchDashboardData = async () => {
     try {
+      // Fetch campaigns with real data from database
       const { data: campaigns } = await supabase
         .from("campaigns")
         .select("*")
@@ -31,6 +36,7 @@ export function Dashboard() {
         .eq("status", "sent")
         .order("sent_at", { ascending: false });
 
+      // Calculate totals from actual campaign data
       const totalSent =
         campaigns?.reduce((sum, c) => sum + (c.recipients_count || 0), 0) || 0;
       const totalOpens =
@@ -43,6 +49,7 @@ export function Dashboard() {
       const clickRate =
         totalSent > 0 ? ((totalClicks / totalSent) * 100).toFixed(1) : "0.0";
 
+      // Fetch active contacts count
       const { data: contacts } = await supabase
         .from("contacts")
         .select("id", { count: "exact" })
@@ -56,6 +63,7 @@ export function Dashboard() {
         activeContacts: (contacts?.length || 0).toLocaleString(),
       });
 
+      // Map recent campaigns with real data
       setRecentCampaigns(
         campaigns?.slice(0, 5).map((c) => ({
           name: c.name,
@@ -194,49 +202,55 @@ export function Dashboard() {
           <h2 className="text-xl font-serif font-bold mb-6">
             Recent Campaigns
           </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 text-sm font-semibold">
-                    Campaign
-                  </th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold">
-                    Sent
-                  </th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold">
-                    Opens
-                  </th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold">
-                    Clicks
-                  </th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold">
-                    Date
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentCampaigns.map((campaign, index) => (
-                  <tr
-                    key={index}
-                    className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                  >
-                    <td className="py-4 px-4 font-medium">{campaign.name}</td>
-                    <td className="py-4 px-4 text-right">{campaign.sent}</td>
-                    <td className="py-4 px-4 text-right text-purple font-semibold">
-                      {campaign.opens}
-                    </td>
-                    <td className="py-4 px-4 text-right text-gold font-semibold">
-                      {campaign.clicks}
-                    </td>
-                    <td className="py-4 px-4 text-right text-gray-600 text-sm">
-                      {campaign.date}
-                    </td>
+          {recentCampaigns.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              No campaigns sent yet. Create your first campaign to get started!
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="text-left py-3 px-4 text-sm font-semibold">
+                      Campaign
+                    </th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold">
+                      Sent
+                    </th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold">
+                      Opens
+                    </th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold">
+                      Clicks
+                    </th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold">
+                      Date
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {recentCampaigns.map((campaign, index) => (
+                    <tr
+                      key={index}
+                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="py-4 px-4 font-medium">{campaign.name}</td>
+                      <td className="py-4 px-4 text-right">{campaign.sent}</td>
+                      <td className="py-4 px-4 text-right text-purple font-semibold">
+                        {campaign.opens}
+                      </td>
+                      <td className="py-4 px-4 text-right text-gold font-semibold">
+                        {campaign.clicks}
+                      </td>
+                      <td className="py-4 px-4 text-right text-gray-600 text-sm">
+                        {campaign.date}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </AppLayout>
