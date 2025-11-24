@@ -32,7 +32,7 @@ interface Segment {
   contact_count?: number;
 }
 
-export default function Campaigns() {
+export function Campaigns() {
   const { user } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -191,13 +191,11 @@ export default function Campaigns() {
     }
 
     if (sendMode === 'groups') {
-      // Fetch contacts from selected segments
       const segmentIds = Array.from(selectedSegments);
       if (segmentIds.length === 0) {
         return [];
       }
 
-      // Get segment members
       const { data, error } = await supabase
         .from('segment_contacts')
         .select('contact_id')
@@ -273,7 +271,6 @@ export default function Campaigns() {
         </button>
       </div>
 
-      {/* Campaigns List */}
       <div className="grid gap-4">
         {campaigns.map((campaign) => (
           <div key={campaign.id} className="border rounded-lg p-6 bg-white">
@@ -325,7 +322,6 @@ export default function Campaigns() {
         ))}
       </div>
 
-      {/* Create Campaign Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -385,13 +381,11 @@ export default function Campaigns() {
         </div>
       )}
 
-      {/* Send Campaign Modal with Group/Contact Selection */}
       {showSendModal && selectedCampaign && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-bold mb-6">Send Campaign: {selectedCampaign.name}</h2>
             
-            {/* Send Mode Selection */}
             <div className="mb-6">
               <label className="block text-sm font-medium mb-3">Send To:</label>
               <div className="flex gap-4">
@@ -428,7 +422,6 @@ export default function Campaigns() {
               </div>
             </div>
 
-            {/* Group Selection */}
             {sendMode === 'groups' && (
               <div className="mb-6">
                 <h3 className="font-medium mb-3">Select Groups ({selectedSegments.size} selected)</h3>
@@ -457,7 +450,6 @@ export default function Campaigns() {
               </div>
             )}
 
-            {/* Contact Selection */}
             {sendMode === 'contacts' && (
               <div className="mb-6">
                 <div className="flex justify-between items-center mb-3">
