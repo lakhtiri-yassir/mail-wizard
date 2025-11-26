@@ -1,18 +1,17 @@
 /**
  * Campaigns Page
  * 
- * Campaign management with advanced recipient selection.
+ * Campaign management with advanced recipient selection and status tracking.
  * 
- * FIXES APPLIED:
- * - Load groups from contact_groups table instead of segments
- * - Allow selection of multiple groups
- * - Allow selection of individual contacts
- * - Support mixed selection (groups + individual contacts)
- * - Show recipient count preview
+ * FEATURES:
+ * - Display campaign status (Draft, Scheduled, Sent)
+ * - Show email metrics (opens, clicks, bounces)
+ * - Advanced recipient selection (groups + contacts)
+ * - Real-time recipient count preview
  */
 
 import { useState, useEffect } from 'react';
-import { Plus, Mail, Send } from 'lucide-react';
+import { Plus, Mail, Send, Eye, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { AppLayout } from '../../components/app/AppLayout';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../../components/ui/Button';
@@ -29,6 +28,7 @@ interface Campaign {
   recipients_count: number;
   opens: number;
   clicks: number;
+  bounces: number;
   sent_at: string | null;
   created_at: string;
 }
@@ -60,6 +60,7 @@ export function Campaigns() {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   
   // Send modal state
   const [sendMode, setSendMode] = useState<SendMode>('all');
@@ -121,10 +122,6 @@ export function Campaigns() {
     }
   };
 
-  /**
-   * Fetch groups from contact_groups table
-   * FIXED: Was previously fetching from 'segments' table
-   */
   const fetchGroups = async () => {
     if (!user) return;
 
@@ -183,10 +180,6 @@ export function Campaigns() {
     }
   };
 
-  /**
-   * Build recipient list based on selection mode
-   * FIXED: Queries contact_group_members instead of segment_contacts
-   */
   const getRecipientList = async (): Promise<Contact[]> => {
     if (!user) return [];
 
@@ -206,7 +199,6 @@ export function Campaigns() {
         return [];
       }
 
-      // Query contact_group_members table
       const { data: groupMembers, error } = await supabase
         .from('contact_group_members')
         .select('contact_id')
@@ -225,10 +217,8 @@ export function Campaigns() {
     }
 
     if (sendMode === 'mixed') {
-      // Combine groups and individual contacts
       let recipientSet = new Set<string>();
 
-      // Add contacts from selected groups
       if (selectedGroups.size > 0) {
         const groupIds = Array.from(selectedGroups);
         const { data: groupMembers } = await supabase
@@ -239,10 +229,8 @@ export function Campaigns() {
         groupMembers?.forEach(gm => recipientSet.add(gm.contact_id));
       }
 
-      // Add individually selected contacts
       selectedContacts.forEach(id => recipientSet.add(id));
 
-      // Convert to contact objects
       const recipientIds = Array.from(recipientSet);
       return contacts.filter(c => 
         recipientIds.includes(c.id) && c.status === 'active'
@@ -252,9 +240,6 @@ export function Campaigns() {
     return [];
   };
 
-  /**
-   * Update recipient count for preview
-   */
   const updateRecipientCount = async () => {
     const recipients = await getRecipientList();
     setRecipientCount(recipients.length);
@@ -297,7 +282,7 @@ export function Campaigns() {
       if (error) throw error;
 
       toast.success(`Campaign sent to ${data.sent} recipient(s)!`, { id: toastId });
-      fetchCampaigns();
+      fetchCampaigns(); // Refresh to show updated status
     } catch (error: any) {
       console.error('Error sending campaign:', error);
       toast.error(error.message || 'Failed to send campaign', { id: toastId });
@@ -306,10 +291,64 @@ export function Campaigns() {
     }
   };
 
-  const filteredCampaigns = campaigns.filter(campaign =>
-    campaign.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    campaign.subject.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  /**
+   * Get status badge styling and icon
+   */
+  const getStatusBadge = (campaign: Campaign) => {
+    if (campaign.status === 'sent') {
+      return {
+        icon: <CheckCircle size={14} />,
+        text: 'Sent',
+        className: 'bg-green-100 text-green-800 border-green-200'
+      };
+    }
+    
+    if (campaign.status === 'scheduled') {
+      return {
+        icon: <Clock size={14} />,
+        text: 'Scheduled',
+        className: 'bg-blue-100 text-blue-800 border-blue-200'
+      };
+    }
+    
+    // draft
+    return {
+      icon: <AlertCircle size={14} />,
+      text: 'Draft',
+      className: 'bg-gray-100 text-gray-800 border-gray-200'
+    };
+  };
+
+  /**
+   * Calculate open rate percentage
+   */
+  const getOpenRate = (campaign: Campaign) => {
+    if (!campaign.recipients_count || campaign.recipients_count === 0) return 0;
+    return Math.round((campaign.opens / campaign.recipients_count) * 100);
+  };
+
+  /**
+   * Calculate click rate percentage
+   */
+  const getClickRate = (campaign: Campaign) => {
+    if (!campaign.recipients_count || campaign.recipients_count === 0) return 0;
+    return Math.round((campaign.clicks / campaign.recipients_count) * 100);
+  };
+
+  /**
+   * Filter campaigns by search and status
+   */
+  const filteredCampaigns = campaigns.filter(campaign => {
+    const matchesSearch = 
+      campaign.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      campaign.subject.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesStatus = 
+      statusFilter === 'all' || 
+      campaign.status === statusFilter;
+    
+    return matchesSearch && matchesStatus;
+  });
 
   return (
     <AppLayout currentPath="/app/campaigns">
@@ -329,6 +368,7 @@ export function Campaigns() {
           </Button>
         </div>
 
+        {/* Search and Filter Bar */}
         <div className="card mb-6">
           <div className="flex gap-4">
             <div className="flex-1">
@@ -339,64 +379,131 @@ export function Campaigns() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
+            <select 
+              className="input-base w-auto"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">All Status</option>
+              <option value="draft">Draft</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="sent">Sent</option>
+            </select>
           </div>
         </div>
 
+        {/* Campaign List */}
         {loading ? (
           <div className="text-center py-12">
-            <p className="text-gray-600">Loading campaigns...</p>
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gold"></div>
+            <p className="text-gray-600 mt-4">Loading campaigns...</p>
           </div>
         ) : filteredCampaigns.length === 0 ? (
           <div className="card text-center py-12">
             <Mail size={48} className="text-gray-300 mx-auto mb-4" />
             <p className="text-gray-600 mb-2">No campaigns found</p>
             <p className="text-sm text-gray-500">
-              {searchQuery ? 'Try a different search term' : 'Create your first campaign to get started'}
+              {searchQuery || statusFilter !== 'all'
+                ? 'Try adjusting your search or filter'
+                : 'Create your first campaign to get started'}
             </p>
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredCampaigns.map((campaign) => (
-              <div key={campaign.id} className="card hover:shadow-lg transition-shadow">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <h3 className="text-xl font-serif font-bold mb-1">{campaign.name}</h3>
-                    <p className="text-gray-600 mb-3">{campaign.subject}</p>
-                    <div className="flex gap-6 text-sm">
-                      <div>
-                        <span className="text-gray-600">Recipients: </span>
-                        <span className="font-semibold">{campaign.recipients_count || 0}</span>
+            {filteredCampaigns.map((campaign) => {
+              const statusBadge = getStatusBadge(campaign);
+              const openRate = getOpenRate(campaign);
+              const clickRate = getClickRate(campaign);
+
+              return (
+                <div key={campaign.id} className="card hover:shadow-lg transition-shadow">
+                  <div className="flex items-start justify-between">
+                    {/* Campaign Info */}
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h3 className="text-xl font-serif font-bold">{campaign.name}</h3>
+                        <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border ${statusBadge.className}`}>
+                          {statusBadge.icon}
+                          {statusBadge.text}
+                        </span>
                       </div>
-                      <div>
-                        <span className="text-gray-600">Opens: </span>
-                        <span className="font-semibold">{campaign.opens || 0}</span>
+                      
+                      <p className="text-gray-600 mb-4">{campaign.subject}</p>
+                      
+                      {/* Metrics Row */}
+                      <div className="flex gap-6 text-sm">
+                        {campaign.status === 'sent' ? (
+                          <>
+                            <div>
+                              <span className="text-gray-600">Sent to: </span>
+                              <span className="font-semibold">{campaign.recipients_count || 0}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">Opens: </span>
+                              <span className="font-semibold">{campaign.opens || 0}</span>
+                              <span className="text-gray-500 ml-1">({openRate}%)</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">Clicks: </span>
+                              <span className="font-semibold">{campaign.clicks || 0}</span>
+                              <span className="text-gray-500 ml-1">({clickRate}%)</span>
+                            </div>
+                            {campaign.bounces > 0 && (
+                              <div>
+                                <span className="text-gray-600">Bounces: </span>
+                                <span className="font-semibold text-red-600">{campaign.bounces}</span>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-gray-500 italic">
+                            Not yet sent
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <span className="text-gray-600">Clicks: </span>
-                        <span className="font-semibold">{campaign.clicks || 0}</span>
-                      </div>
+
+                      {/* Sent Date */}
+                      {campaign.sent_at && (
+                        <div className="mt-3 text-xs text-gray-500">
+                          Sent on {new Date(campaign.sent_at).toLocaleString()}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm text-gray-600 mb-2">
-                      {new Date(campaign.created_at).toLocaleDateString()}
+
+                    {/* Action Buttons */}
+                    <div className="text-right ml-4">
+                      <div className="text-sm text-gray-600 mb-3">
+                        Created {new Date(campaign.created_at).toLocaleDateString()}
+                      </div>
+                      
+                      {campaign.status === 'draft' && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          icon={Send}
+                          onClick={() => handleOpenSendModal(campaign)}
+                          loading={sending === campaign.id}
+                          disabled={sending !== null}
+                        >
+                          Send Campaign
+                        </Button>
+                      )}
+                      
+                      {campaign.status === 'sent' && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={Eye}
+                          onClick={() => {/* View campaign details */}}
+                        >
+                          View Details
+                        </Button>
+                      )}
                     </div>
-                    {campaign.status === 'draft' && (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        icon={Send}
-                        onClick={() => handleOpenSendModal(campaign)}
-                        loading={sending === campaign.id}
-                        disabled={sending !== null}
-                      >
-                        Send
-                      </Button>
-                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
