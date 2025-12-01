@@ -1,31 +1,79 @@
+/**
+ * DASHBOARD PAGE COMPONENT
+ * 
+ * Main dashboard displaying campaign analytics, statistics, and recent activity.
+ * Includes real-time metrics and performance chart visualization.
+ * 
+ * FEATURES:
+ * - Real-time statistics (total sent, open rate, click rate, active contacts)
+ * - Performance chart showing open/click rates over time
+ * - Recent campaigns list
+ * - Quick action buttons
+ * - Auto-refresh every 30 seconds
+ * 
+ * DATA SOURCES:
+ * - Campaigns table: Aggregated campaign metrics
+ * - Email_events table: Individual event data for time-series analytics
+ * - Contacts table: Active contact count
+ */
+
 import { useState, useEffect } from "react";
 import { TrendingUp, Mail, Users, MousePointer, MailOpen } from "lucide-react";
 import { AppLayout } from "../../components/app/AppLayout";
 import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "../../components/ui/Button";
 import { supabase } from "../../lib/supabase";
+import { PerformanceChart, DayMetrics } from "../../components/dashboard/PerformanceChart";
+import toast from "react-hot-toast";
 
+/**
+ * DASHBOARD COMPONENT
+ */
 export function Dashboard() {
   const { profile, user } = useAuth();
+  
+  // STATE: Dashboard statistics
   const [stats, setStats] = useState({
     totalSent: "0",
     openRate: "0%",
     clickRate: "0%",
     activeContacts: "0",
   });
+  
+  // STATE: Recent campaigns list
   const [recentCampaigns, setRecentCampaigns] = useState<any[]>([]);
+  
+  // STATE: Loading states
   const [loading, setLoading] = useState(true);
+  const [chartLoading, setChartLoading] = useState(true);
+  
+  // STATE: Chart data and time range
+  const [timeRange, setTimeRange] = useState<number>(7);
+  const [chartData, setChartData] = useState<DayMetrics[]>([]);
 
+  /**
+   * EFFECT: Fetch dashboard data on mount and time range change
+   */
   useEffect(() => {
     if (user) {
       fetchDashboardData();
+      fetchAnalyticsData(timeRange);
       
       // Auto-refresh every 30 seconds
-      const interval = setInterval(fetchDashboardData, 30000);
+      const interval = setInterval(() => {
+        fetchDashboardData();
+        fetchAnalyticsData(timeRange);
+      }, 30000);
+      
       return () => clearInterval(interval);
     }
-  }, [user]);
+  }, [user, timeRange]);
 
+  /**
+   * FETCH DASHBOARD DATA
+   * 
+   * Retrieves overall statistics and recent campaigns from database
+   */
   const fetchDashboardData = async () => {
     try {
       // Fetch campaigns with real data from database
@@ -80,6 +128,105 @@ export function Dashboard() {
     }
   };
 
+  /**
+   * FETCH ANALYTICS DATA
+   * 
+   * Retrieves time-series data for performance chart
+   * Aggregates campaign metrics by day for the selected time range
+   * 
+   * @param days - Number of days to fetch (7, 30, or 90)
+   */
+  const fetchAnalyticsData = async (days: number) => {
+    try {
+      setChartLoading(true);
+
+      // Calculate date range
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      // Fetch campaigns within date range
+      const { data: campaigns, error } = await supabase
+        .from("campaigns")
+        .select("*")
+        .eq("user_id", user?.id)
+        .eq("status", "sent")
+        .gte("sent_at", startDate.toISOString())
+        .lte("sent_at", endDate.toISOString())
+        .order("sent_at", { ascending: true });
+
+      if (error) throw error;
+
+      // Initialize data structure for all days in range
+      const dailyMetrics = new Map<string, DayMetrics>();
+      
+      // Create entries for each day in the range
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const dateKey = d.toISOString().split('T')[0];
+        const shortDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const fullDate = d.toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        });
+        
+        dailyMetrics.set(dateKey, {
+          date: shortDate,
+          fullDate: fullDate,
+          sent: 0,
+          opens: 0,
+          clicks: 0,
+          openRate: 0,
+          clickRate: 0,
+        });
+      }
+
+      // Aggregate campaign data by day
+      campaigns?.forEach((campaign) => {
+        const sentDate = new Date(campaign.sent_at).toISOString().split('T')[0];
+        const dayData = dailyMetrics.get(sentDate);
+        
+        if (dayData) {
+          dayData.sent += campaign.recipients_count || 0;
+          dayData.opens += campaign.opens || 0;
+          dayData.clicks += campaign.clicks || 0;
+        }
+      });
+
+      // Calculate rates for each day
+      const chartDataArray: DayMetrics[] = [];
+      dailyMetrics.forEach((dayData) => {
+        if (dayData.sent > 0) {
+          dayData.openRate = (dayData.opens / dayData.sent) * 100;
+          dayData.clickRate = (dayData.clicks / dayData.sent) * 100;
+        }
+        chartDataArray.push(dayData);
+      });
+
+      setChartData(chartDataArray);
+    } catch (error) {
+      console.error("Error fetching analytics data:", error);
+      toast.error("Failed to load analytics data");
+      setChartData([]);
+    } finally {
+      setChartLoading(false);
+    }
+  };
+
+  /**
+   * HANDLE TIME RANGE CHANGE
+   * 
+   * Updates chart when user selects different time range
+   */
+  const handleTimeRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setTimeRange(Number(e.target.value));
+  };
+
+  /**
+   * STATS DISPLAY CONFIGURATION
+   * 
+   * Defines the statistics cards shown at the top of dashboard
+   */
   const statsDisplay = [
     {
       name: "Total Sent",
@@ -118,6 +265,7 @@ export function Dashboard() {
   return (
     <AppLayout currentPath="/app">
       <div className="p-8">
+        {/* HEADER SECTION */}
         <div className="mb-8">
           <h1 className="text-3xl font-serif font-bold mb-2">
             Welcome back, {profile?.full_name || "there"}
@@ -127,6 +275,7 @@ export function Dashboard() {
           </p>
         </div>
 
+        {/* STATISTICS CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {statsDisplay.map((stat) => {
             const Icon = stat.icon;
@@ -153,29 +302,30 @@ export function Dashboard() {
           })}
         </div>
 
+        {/* PERFORMANCE OVERVIEW AND QUICK ACTIONS */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* PERFORMANCE OVERVIEW CHART */}
           <div className="lg:col-span-2 card">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-serif font-bold">
                 Performance Overview
               </h2>
-              <select className="input-base w-auto">
-                <option>Last 7 days</option>
-                <option>Last 30 days</option>
-                <option>Last 90 days</option>
+              <select 
+                className="input-base w-auto"
+                value={timeRange}
+                onChange={handleTimeRangeChange}
+              >
+                <option value={7}>Last 7 days</option>
+                <option value={30}>Last 30 days</option>
+                <option value={90}>Last 90 days</option>
               </select>
             </div>
-            <div className="h-64 flex items-center justify-center border border-black rounded-lg bg-gradient-to-br from-purple/5 to-gold/5">
-              <div className="text-center">
-                <TrendingUp size={48} className="text-gold mx-auto mb-4" />
-                <p className="text-gray-600">Chart visualization placeholder</p>
-                <p className="text-sm text-gray-500 mt-2">
-                  Opens and clicks over time
-                </p>
-              </div>
-            </div>
+            
+            {/* PERFORMANCE CHART COMPONENT */}
+            <PerformanceChart data={chartData} loading={chartLoading} />
           </div>
 
+          {/* QUICK ACTIONS SIDEBAR */}
           <div className="card">
             <h2 className="text-xl font-serif font-bold mb-6">Quick Actions</h2>
             <div className="space-y-3">
@@ -198,53 +348,49 @@ export function Dashboard() {
           </div>
         </div>
 
+        {/* RECENT CAMPAIGNS TABLE */}
         <div className="card">
           <h2 className="text-xl font-serif font-bold mb-6">
             Recent Campaigns
           </h2>
           {recentCampaigns.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              No campaigns sent yet. Create your first campaign to get started!
+            <div className="text-center py-12">
+              <Mail size={48} className="text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600 mb-2">No campaigns sent yet</p>
+              <p className="text-sm text-gray-500">
+                Create your first campaign to get started
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 text-sm font-semibold">
+                    <th className="text-left py-3 px-4 font-semibold text-sm text-gray-600">
                       Campaign
                     </th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold">
+                    <th className="text-left py-3 px-4 font-semibold text-sm text-gray-600">
                       Sent
                     </th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold">
+                    <th className="text-left py-3 px-4 font-semibold text-sm text-gray-600">
                       Opens
                     </th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold">
+                    <th className="text-left py-3 px-4 font-semibold text-sm text-gray-600">
                       Clicks
                     </th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold">
+                    <th className="text-left py-3 px-4 font-semibold text-sm text-gray-600">
                       Date
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recentCampaigns.map((campaign, index) => (
-                    <tr
-                      key={index}
-                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                    >
-                      <td className="py-4 px-4 font-medium">{campaign.name}</td>
-                      <td className="py-4 px-4 text-right">{campaign.sent}</td>
-                      <td className="py-4 px-4 text-right text-purple font-semibold">
-                        {campaign.opens}
-                      </td>
-                      <td className="py-4 px-4 text-right text-gold font-semibold">
-                        {campaign.clicks}
-                      </td>
-                      <td className="py-4 px-4 text-right text-gray-600 text-sm">
-                        {campaign.date}
-                      </td>
+                  {recentCampaigns.map((campaign, idx) => (
+                    <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-3 px-4">{campaign.name}</td>
+                      <td className="py-3 px-4">{campaign.sent}</td>
+                      <td className="py-3 px-4">{campaign.opens}</td>
+                      <td className="py-3 px-4">{campaign.clicks}</td>
+                      <td className="py-3 px-4 text-gray-600">{campaign.date}</td>
                     </tr>
                   ))}
                 </tbody>
