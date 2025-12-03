@@ -29,7 +29,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { X, Globe, AlertCircle } from 'lucide-react';
-import domainService, { Domain } from '../../lib/domainService';
+import domainService, { Domain } from '../../lib/services/domainService';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 

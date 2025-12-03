@@ -13,7 +13,7 @@
  * ============================================================================
  */
 
-import { DNSInstructions } from '../../../lib/domainService';
+import { DNSInstructions } from '../../../lib/services/domainService';
 import { Info } from 'lucide-react';
 import DNSRecordRow from '../DNSRecordRow';
 

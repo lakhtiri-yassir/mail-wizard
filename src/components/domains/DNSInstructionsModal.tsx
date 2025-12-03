@@ -29,7 +29,7 @@
 
 import { useState, useEffect } from 'react';
 import { X, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
-import domainService, { DNSInstructions } from '../../lib/domainService';
+import domainService, { DNSInstructions } from '../../lib/services/domainService';
 import { Button } from '../ui/Button';
 import DNSProviderSelector, { DNSProvider } from './DNSProviderSelector';
 import CloudflareGuide from './guides/CloudflareGuide';

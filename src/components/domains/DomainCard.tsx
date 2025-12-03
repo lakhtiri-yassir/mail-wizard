@@ -39,7 +39,7 @@ import {
   RefreshCw,
   Globe
 } from 'lucide-react';
-import { Domain } from '../../lib/domainService';
+import { Domain } from '../../lib/services/domainService';
 import { Button } from '../ui/Button';
 
 interface DomainCardProps {

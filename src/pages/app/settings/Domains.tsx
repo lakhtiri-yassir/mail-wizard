@@ -30,7 +30,7 @@
 
 import { useState, useEffect } from 'react';
 import { Globe, Plus, AlertCircle, RefreshCw } from 'lucide-react';
-import domainService, { Domain } from '../../../lib/domainService';
+import domainService, { Domain } from '../../../lib/services/domainService';
 import AppLayout from '../../../components/app/AppLayout';
 import { Button } from '../../../components/ui/Button';
 import DomainCard from '../../../components/domains/DomainCard';
