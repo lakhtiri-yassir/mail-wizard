@@ -91,26 +91,7 @@ function checkDomainFeatureAccess(planType: string): boolean {
  * Creates a new domain in SendGrid
  */
 async function createSendGridDomain(domain: string) {
-  if (TESTING_MODE) {
-    console.log('⚠️  TESTING MODE: Skipping SendGrid API call');
-    return {
-      id: 'test-sendgrid-id-' + Date.now(),
-      dns_records: {
-        dkim1: {
-          host: `s1._domainkey.${domain}`,
-          type: 'CNAME',
-          data: 'example.sendgrid.net',
-          valid: false
-        },
-        dkim2: {
-          host: `s2._domainkey.${domain}`,
-          type: 'CNAME',
-          data: 'example2.sendgrid.net',
-          valid: false
-        }
-      }
-    };
-  }
+  console.log(`🌐 Creating domain in SendGrid: ${domain}`);
 
   const response = await fetch('https://api.sendgrid.com/v3/whitelabel/domains', {
     method: 'POST',
@@ -129,18 +110,40 @@ async function createSendGridDomain(domain: string) {
 
   if (!response.ok) {
     const errorData = await response.json();
+    console.error('❌ SendGrid API error:', errorData);
+    
+    // If 409, domain already exists - fetch it instead
+    if (response.status === 409) {
+      console.log('⚠️  Domain exists, fetching existing domain data...');
+      return await fetchExistingSendGridDomain(domain);
+    }
+    
     throw new Error(`SendGrid API error: ${errorData.errors?.[0]?.message || 'Unknown error'}`);
   }
 
   const data = await response.json();
-  return {
-    id: data.id,
-    dns_records: {
-      dkim1: data.dns.dkim1,
-      dkim2: data.dns.dkim2,
-      mail_cname: data.dns.mail_cname
+  console.log('✅ Domain created, ID:', data.id);
+
+  // Fetch the domain again to get complete DNS records
+  console.log('🔄 Fetching complete domain details...');
+  
+  const detailsResponse = await fetch(`https://api.sendgrid.com/v3/whitelabel/domains/${data.id}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${SENDGRID_API_KEY}`,
+      'Content-Type': 'application/json'
     }
-  };
+  });
+
+  if (!detailsResponse.ok) {
+    console.error('❌ Failed to fetch domain details');
+    throw new Error('Failed to fetch complete domain configuration');
+  }
+
+  const fullData = await detailsResponse.json();
+  console.log('📦 Complete domain data:', JSON.stringify(fullData, null, 2));
+
+  return extractDNSRecords(fullData);
 }
 
 /**
@@ -205,12 +208,7 @@ async function deleteSendGridDomain(sendgridDomainId: string) {
  * Adds a new domain for the user
  */
 async function addDomain(supabase: any, userId: string, domain: string, planType: string) {
-  console.log(`➕ Adding domain: ${domain} for user: ${userId}`);
-
-  // Check feature access
-  if (!checkDomainFeatureAccess(planType)) {
-    throw new Error('Custom domains are only available on Pro and Pro Plus plans');
-  }
+  console.log(`📧 Adding domain: ${domain}`);
 
   // Validate domain format
   const validation = validateDomain(domain);
@@ -218,70 +216,190 @@ async function addDomain(supabase: any, userId: string, domain: string, planType
     throw new Error(validation.error);
   }
 
-  // Check if domain already exists for this user
-  const { data: existingUserDomain } = await supabase
+  // Check plan access
+  if (!checkDomainFeatureAccess(planType)) {
+    throw new Error('Custom domains require Pro or Pro Plus plan');
+  }
+
+  // Check if domain already exists in database
+  const { data: existing } = await supabase
     .from('sending_domains')
-    .select('id')
+    .select('*')
+    .eq('domain', domain)
     .eq('user_id', userId)
-    .eq('domain', domain)
     .single();
 
-  if (existingUserDomain) {
-    throw new Error('You have already added this domain');
+  if (existing) {
+    throw new Error('Domain already exists for this user');
   }
 
-  // Check if domain is claimed by another user
-  const { data: existingOtherDomain } = await supabase
-    .from('sending_domains')
-    .select('id, user_id')
-    .eq('domain', domain)
-    .neq('user_id', userId)
-    .single();
-
-  if (existingOtherDomain) {
-    throw new Error('This domain is already claimed by another user');
+  let sendgridDomainData;
+  
+  try {
+    // Try to create domain in SendGrid
+    sendgridDomainData = await createSendGridDomain(domain);
+  } catch (error: any) {
+    // If domain already exists in SendGrid (409 error), try to fetch it
+    if (error.message.includes('409') || error.message.includes('already exists')) {
+      console.log('⚠️ Domain already exists in SendGrid, attempting to fetch existing domain data...');
+      
+      try {
+        // Fetch existing SendGrid domain
+        sendgridDomainData = await fetchExistingSendGridDomain(domain);
+      } catch (fetchError: any) {
+        console.error('❌ Failed to fetch existing SendGrid domain:', fetchError);
+        throw new Error('Domain already exists in SendGrid but could not be retrieved. Please contact support.');
+      }
+    } else {
+      throw error;
+    }
   }
 
-  // Create domain in SendGrid
-  const sendgridDomain = await createSendGridDomain(domain);
-
-  // Check if user has any domains (set as default if first)
-  const { count } = await supabase
-    .from('sending_domains')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId);
-
-  const isFirstDomain = count === 0;
-
-  // Store in database
-  const { data: newDomain, error: dbError } = await supabase
+  // Insert domain into database
+  const { data: newDomain, error: insertError } = await supabase
     .from('sending_domains')
     .insert({
       user_id: userId,
       domain: domain,
+      sendgrid_domain_id: sendgridDomainData.id.toString(),
+      dns_records: sendgridDomainData.dns_records,
       verification_status: 'pending',
-      sendgrid_domain_id: sendgridDomain.id,
-      dns_records: sendgridDomain.dns_records,
-      is_default: isFirstDomain,
-      created_at: new Date().toISOString()
+      is_default: false
     })
     .select()
     .single();
 
-  if (dbError) {
-    console.error('❌ Database error:', dbError);
-    // Clean up SendGrid domain if database insert fails
-    try {
-      await deleteSendGridDomain(sendgridDomain.id);
-    } catch (cleanupError) {
-      console.error('⚠️  Failed to clean up SendGrid domain:', cleanupError);
-    }
-    throw new Error(`Failed to save domain: ${dbError.message}`);
+  if (insertError) {
+    console.error('❌ Failed to insert domain:', insertError);
+    throw new Error('Failed to save domain to database');
   }
 
-  console.log('✅ Domain added successfully:', newDomain.id);
+  console.log('✅ Domain added successfully');
   return newDomain;
 }
+
+/**
+ * Fetches existing domain from SendGrid by searching for it
+ */
+async function fetchExistingSendGridDomain(domain: string) {
+  console.log(`🔍 Fetching existing domain: ${domain}`);
+
+  const response = await fetch('https://api.sendgrid.com/v3/whitelabel/domains', {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${SENDGRID_API_KEY}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch domains from SendGrid');
+  }
+
+  const allDomains = await response.json();
+  
+  // Find matching domain
+  const matchingDomain = allDomains.find((d: any) => 
+    d.domain === domain
+  );
+
+  if (!matchingDomain) {
+    throw new Error(`Domain ${domain} not found in SendGrid`);
+  }
+
+  console.log('✅ Found existing domain, ID:', matchingDomain.id);
+  console.log('📦 Full domain data:', JSON.stringify(matchingDomain, null, 2));
+
+  return extractDNSRecords(matchingDomain);
+}
+
+/**
+ * Extracts ALL DNS records from SendGrid domain object
+ */
+function extractDNSRecords(sendgridDomain: any) {
+  const dns_records: any = {};
+
+  console.log('📋 Extracting DNS records from SendGrid response...');
+
+  // Mail Server (MX)
+  if (sendgridDomain.dns?.mail_server) {
+    dns_records.mail_server = {
+      host: sendgridDomain.dns.mail_server.host,
+      type: sendgridDomain.dns.mail_server.type,
+      data: sendgridDomain.dns.mail_server.data,
+      valid: sendgridDomain.dns.mail_server.valid || false
+    };
+    console.log('✅ mail_server:', dns_records.mail_server.data);
+  }
+
+  // Subdomain SPF (TXT)
+  if (sendgridDomain.dns?.subdomain_spf) {
+    dns_records.subdomain_spf = {
+      host: sendgridDomain.dns.subdomain_spf.host,
+      type: sendgridDomain.dns.subdomain_spf.type,
+      data: sendgridDomain.dns.subdomain_spf.data,
+      valid: sendgridDomain.dns.subdomain_spf.valid || false
+    };
+    console.log('✅ subdomain_spf:', dns_records.subdomain_spf.data);
+  }
+
+  // DKIM (TXT) - single record
+  if (sendgridDomain.dns?.dkim) {
+    dns_records.dkim = {
+      host: sendgridDomain.dns.dkim.host,
+      type: sendgridDomain.dns.dkim.type,
+      data: sendgridDomain.dns.dkim.data,
+      valid: sendgridDomain.dns.dkim.valid || false
+    };
+    console.log('✅ dkim:', dns_records.dkim.host);
+  }
+
+  // DKIM1 (CNAME format - alternative)
+  if (sendgridDomain.dns?.dkim1) {
+    dns_records.dkim1 = {
+      host: sendgridDomain.dns.dkim1.host,
+      type: sendgridDomain.dns.dkim1.type,
+      data: sendgridDomain.dns.dkim1.data,
+      valid: sendgridDomain.dns.dkim1.valid || false
+    };
+    console.log('✅ dkim1:', dns_records.dkim1.data);
+  }
+
+  // DKIM2 (CNAME format - alternative)
+  if (sendgridDomain.dns?.dkim2) {
+    dns_records.dkim2 = {
+      host: sendgridDomain.dns.dkim2.host,
+      type: sendgridDomain.dns.dkim2.type,
+      data: sendgridDomain.dns.dkim2.data,
+      valid: sendgridDomain.dns.dkim2.valid || false
+    };
+    console.log('✅ dkim2:', dns_records.dkim2.data);
+  }
+
+  // Mail CNAME
+  if (sendgridDomain.dns?.mail_cname) {
+    dns_records.mail_cname = {
+      host: sendgridDomain.dns.mail_cname.host,
+      type: sendgridDomain.dns.mail_cname.type,
+      data: sendgridDomain.dns.mail_cname.data,
+      valid: sendgridDomain.dns.mail_cname.valid || false
+    };
+    console.log('✅ mail_cname:', dns_records.mail_cname.data);
+  }
+
+  console.log(`📊 Total DNS records extracted: ${Object.keys(dns_records).length}`);
+
+  if (Object.keys(dns_records).length === 0) {
+    console.error('❌ No DNS records found in SendGrid response!');
+    throw new Error('SendGrid did not return any DNS records');
+  }
+
+  return {
+    id: sendgridDomain.id,
+    dns_records: dns_records
+  };
+}
+
 
 /**
  * Verifies a domain by checking DNS records
@@ -480,7 +598,6 @@ async function setDefaultDomain(supabase: any, userId: string, domainId: string)
 async function getDNSInstructions(supabase: any, userId: string, domainId: string) {
   console.log(`📖 Getting DNS instructions for domain: ${domainId}`);
 
-  // Fetch domain from database
   const { data: domain, error } = await supabase
     .from('sending_domains')
     .select('*')
@@ -489,99 +606,138 @@ async function getDNSInstructions(supabase: any, userId: string, domainId: strin
     .single();
 
   if (error || !domain) {
-    console.error('❌ Domain not found:', error);
     throw new Error('Domain not found');
   }
 
-  const dnsRecords = domain.dns_records;
-  
-  // Log DNS records structure for debugging
-  console.log('📋 DNS Records from database:', {
-    has_mail_cname: !!dnsRecords.mail_cname,
-    has_dkim1: !!dnsRecords.dkim1,
-    has_dkim2: !!dnsRecords.dkim2,
-    mail_cname_host: dnsRecords.mail_cname?.host,
-    mail_cname_data: dnsRecords.mail_cname?.data,
-    dkim1_host: dnsRecords.dkim1?.host,
-    dkim1_data: dnsRecords.dkim1?.data,
-    dkim2_host: dnsRecords.dkim2?.host,
-    dkim2_data: dnsRecords.dkim2?.data
-  });
+  const dnsRecords = domain.dns_records || {};
+  console.log('📋 DNS Records:', JSON.stringify(dnsRecords, null, 2));
 
-  // Build instructions array dynamically
   const instructionsArray = [];
 
-  // Add MAIL CNAME if it exists (SendGrid may or may not return this)
-  if (dnsRecords.mail_cname && dnsRecords.mail_cname.data) {
+  // 1. MX Record (mail_server)
+  if (dnsRecords.mail_server?.data) {
     instructionsArray.push({
       step: instructionsArray.length + 1,
-      title: 'Add CNAME Record (Mail)',
-      description: 'Links your domain to SendGrid\'s mail servers for sending emails',
+      title: 'Add MX Record',
+      description: 'Mail exchange record for receiving emails',
       required: true,
       record: {
-        type: dnsRecords.mail_cname.type || 'CNAME',
-        host: dnsRecords.mail_cname.host,
-        value: dnsRecords.mail_cname.data, // CRITICAL: Use .data not .value
+        type: (dnsRecords.mail_server.type || 'MX').toUpperCase(), // Convert to uppercase
+        host: dnsRecords.mail_server.host,
+        value: dnsRecords.mail_server.data,
         ttl: 300,
-        valid: dnsRecords.mail_cname.valid || false
+        valid: dnsRecords.mail_server.valid || false
       }
     });
-  } else {
-    console.warn('⚠️  mail_cname not provided by SendGrid - this is normal for some configurations');
   }
 
-  // Add DKIM1 (required)
-  if (dnsRecords.dkim1 && dnsRecords.dkim1.data) {
+  // 2. SPF Record (subdomain_spf)
+  if (dnsRecords.subdomain_spf?.data) {
     instructionsArray.push({
       step: instructionsArray.length + 1,
-      title: 'Add DKIM Record 1',
-      description: 'First cryptographic signature for email authentication (required)',
+      title: 'Add TXT Record (SPF)',
+      description: 'Authorizes SendGrid to send emails on your behalf',
       required: true,
       record: {
-        type: dnsRecords.dkim1.type || 'CNAME',
+        type: (dnsRecords.subdomain_spf.type || 'TXT').toUpperCase(), // Convert to uppercase
+        host: dnsRecords.subdomain_spf.host,
+        value: dnsRecords.subdomain_spf.data,
+        ttl: 300,
+        valid: dnsRecords.subdomain_spf.valid || false
+      }
+    });
+  }
+
+  // 3. DKIM Record (single TXT record)
+  if (dnsRecords.dkim?.data) {
+    instructionsArray.push({
+      step: instructionsArray.length + 1,
+      title: 'Add TXT Record (DKIM)',
+      description: 'DKIM signature for email authentication',
+      required: true,
+      record: {
+        type: (dnsRecords.dkim.type || 'TXT').toUpperCase(), // Convert to uppercase
+        host: dnsRecords.dkim.host,
+        value: dnsRecords.dkim.data,
+        ttl: 300,
+        valid: dnsRecords.dkim.valid || false
+      }
+    });
+  }
+
+  // Alternative: DKIM1 (CNAME format)
+  if (dnsRecords.dkim1?.data && !dnsRecords.dkim?.data) {
+    instructionsArray.push({
+      step: instructionsArray.length + 1,
+      title: 'Add CNAME Record (DKIM 1)',
+      description: 'First DKIM signature',
+      required: true,
+      record: {
+        type: (dnsRecords.dkim1.type || 'CNAME').toUpperCase(),
         host: dnsRecords.dkim1.host,
-        value: dnsRecords.dkim1.data, // CRITICAL: Use .data not .value
+        value: dnsRecords.dkim1.data,
         ttl: 300,
         valid: dnsRecords.dkim1.valid || false
       }
     });
-  } else {
-    console.error('❌ DKIM1 record missing or incomplete!');
-    throw new Error('DKIM1 record not found in DNS configuration');
   }
 
-  // Add DKIM2 (required)
-  if (dnsRecords.dkim2 && dnsRecords.dkim2.data) {
+  // Alternative: DKIM2 (CNAME format)
+  if (dnsRecords.dkim2?.data && !dnsRecords.dkim?.data) {
     instructionsArray.push({
       step: instructionsArray.length + 1,
-      title: 'Add DKIM Record 2',
-      description: 'Second cryptographic signature for email authentication (required)',
+      title: 'Add CNAME Record (DKIM 2)',
+      description: 'Second DKIM signature',
       required: true,
       record: {
-        type: dnsRecords.dkim2.type || 'CNAME',
+        type: (dnsRecords.dkim2.type || 'CNAME').toUpperCase(),
         host: dnsRecords.dkim2.host,
-        value: dnsRecords.dkim2.data, // CRITICAL: Use .data not .value
+        value: dnsRecords.dkim2.data,
         ttl: 300,
         valid: dnsRecords.dkim2.valid || false
       }
     });
-  } else {
-    console.error('❌ DKIM2 record missing or incomplete!');
-    throw new Error('DKIM2 record not found in DNS configuration');
   }
 
-  console.log(`✅ Generated ${instructionsArray.length} DNS instructions`);
+  // 4. DMARC Record (optional)
+  if (dnsRecords.dmarc?.data) {
+    instructionsArray.push({
+      step: instructionsArray.length + 1,
+      title: 'Add TXT Record (DMARC)',
+      description: 'Policy for handling authentication failures (optional)',
+      required: false,
+      record: {
+        type: 'TXT',
+        host: dnsRecords.dmarc.host,
+        value: dnsRecords.dmarc.data,
+        ttl: 300,
+        valid: dnsRecords.dmarc.valid || false
+      }
+    });
+  }
 
-  // Return formatted instructions
+  if (instructionsArray.length === 0) {
+    return {
+      domain: domain.domain,
+      status: 'failed',
+      records: [],
+      notes: [
+        '⚠️ No DNS records available.',
+        'Please delete and re-add the domain.'
+      ]
+    };
+  }
+
+  console.log(`✅ Generated ${instructionsArray.length} DNS records`);
+
   return {
     domain: domain.domain,
     status: domain.verification_status,
     records: instructionsArray,
     notes: [
-      'Add all DNS records to your domain registrar (GoDaddy, Namecheap, Cloudflare, etc.)',
-      'DNS propagation can take anywhere from 5 minutes to 48 hours',
-      'After adding all records, click "Verify Domain" to check your configuration',
-      `Once verified, emails will be sent from addresses like: user@mail.${domain.domain}`
+      'Add all DNS records to your domain registrar',
+      'DNS propagation takes 5 minutes to 48 hours',
+      'Click "Verify Domain" after adding all records'
     ]
   };
 }
