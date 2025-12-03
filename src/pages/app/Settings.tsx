@@ -1,11 +1,11 @@
 import { User, Globe, CreditCard, Key, Bell, Shield } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '../../components/app/AppLayout';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAuth } from '../../contexts/AuthContext';
 import { useStripeCheckout } from '../../hooks/useStripeCheckout';
+import DomainsContent from '../../components/settings/DomainsContent';
 
 const tabs = [
   { id: 'profile', label: 'Profile', icon: User },
@@ -18,7 +18,6 @@ const tabs = [
 
 export const Settings = () => {
   const { profile } = useAuth();
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('profile');
   const { createCheckoutSession, loading: checkoutLoading } = useStripeCheckout();
 
@@ -27,11 +26,7 @@ export const Settings = () => {
   };
 
   const handleTabClick = (tabId: string) => {
-    if (tabId === 'domains') {
-      navigate('/app/settings/domains');
-    } else {
-      setActiveTab(tabId);
-    }
+    setActiveTab(tabId);
   };
 
   return (
@@ -96,6 +91,8 @@ export const Settings = () => {
                 </form>
               </div>
             )}
+
+            {activeTab === 'domains' && <DomainsContent />}
 
             {activeTab === 'billing' && (
               <div className="card max-w-2xl">
