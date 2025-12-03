@@ -1,6 +1,6 @@
 import { User, Globe, CreditCard, Key, Bell, Shield } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom'; // ADD THIS IMPORT
+import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '../../components/app/AppLayout';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -18,7 +18,7 @@ const tabs = [
 
 export const Settings = () => {
   const { profile } = useAuth();
-  const navigate = useNavigate(); // ADD THIS
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('profile');
   const { createCheckoutSession, loading: checkoutLoading } = useStripeCheckout();
 
@@ -26,7 +26,6 @@ export const Settings = () => {
     createCheckoutSession(plan);
   };
 
-  // ADD THIS FUNCTION
   const handleTabClick = (tabId: string) => {
     if (tabId === 'domains') {
       navigate('/app/settings/domains');
@@ -51,7 +50,7 @@ export const Settings = () => {
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => handleTabClick(tab.id)} {/* CHANGE THIS */}
+                    onClick={() => handleTabClick(tab.id)}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-250 ${
                       activeTab === tab.id
                         ? 'bg-gold text-black font-semibold'
