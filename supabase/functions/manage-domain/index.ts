@@ -480,6 +480,7 @@ async function setDefaultDomain(supabase: any, userId: string, domainId: string)
 async function getDNSInstructions(supabase: any, userId: string, domainId: string) {
   console.log(`📖 Getting DNS instructions for domain: ${domainId}`);
 
+  // Fetch domain from database
   const { data: domain, error } = await supabase
     .from('sending_domains')
     .select('*')
@@ -488,63 +489,101 @@ async function getDNSInstructions(supabase: any, userId: string, domainId: strin
     .single();
 
   if (error || !domain) {
+    console.error('❌ Domain not found:', error);
     throw new Error('Domain not found');
   }
 
   const dnsRecords = domain.dns_records;
+  
+  // Log DNS records structure for debugging
+  console.log('📋 DNS Records from database:', {
+    has_mail_cname: !!dnsRecords.mail_cname,
+    has_dkim1: !!dnsRecords.dkim1,
+    has_dkim2: !!dnsRecords.dkim2,
+    mail_cname_host: dnsRecords.mail_cname?.host,
+    mail_cname_data: dnsRecords.mail_cname?.data,
+    dkim1_host: dnsRecords.dkim1?.host,
+    dkim1_data: dnsRecords.dkim1?.data,
+    dkim2_host: dnsRecords.dkim2?.host,
+    dkim2_data: dnsRecords.dkim2?.data
+  });
 
-  // Format instructions
-  const instructions = {
+  // Build instructions array dynamically
+  const instructionsArray = [];
+
+  // Add MAIL CNAME if it exists (SendGrid may or may not return this)
+  if (dnsRecords.mail_cname && dnsRecords.mail_cname.data) {
+    instructionsArray.push({
+      step: instructionsArray.length + 1,
+      title: 'Add CNAME Record (Mail)',
+      description: 'Links your domain to SendGrid\'s mail servers for sending emails',
+      required: true,
+      record: {
+        type: dnsRecords.mail_cname.type || 'CNAME',
+        host: dnsRecords.mail_cname.host,
+        value: dnsRecords.mail_cname.data, // CRITICAL: Use .data not .value
+        ttl: 300,
+        valid: dnsRecords.mail_cname.valid || false
+      }
+    });
+  } else {
+    console.warn('⚠️  mail_cname not provided by SendGrid - this is normal for some configurations');
+  }
+
+  // Add DKIM1 (required)
+  if (dnsRecords.dkim1 && dnsRecords.dkim1.data) {
+    instructionsArray.push({
+      step: instructionsArray.length + 1,
+      title: 'Add DKIM Record 1',
+      description: 'First cryptographic signature for email authentication (required)',
+      required: true,
+      record: {
+        type: dnsRecords.dkim1.type || 'CNAME',
+        host: dnsRecords.dkim1.host,
+        value: dnsRecords.dkim1.data, // CRITICAL: Use .data not .value
+        ttl: 300,
+        valid: dnsRecords.dkim1.valid || false
+      }
+    });
+  } else {
+    console.error('❌ DKIM1 record missing or incomplete!');
+    throw new Error('DKIM1 record not found in DNS configuration');
+  }
+
+  // Add DKIM2 (required)
+  if (dnsRecords.dkim2 && dnsRecords.dkim2.data) {
+    instructionsArray.push({
+      step: instructionsArray.length + 1,
+      title: 'Add DKIM Record 2',
+      description: 'Second cryptographic signature for email authentication (required)',
+      required: true,
+      record: {
+        type: dnsRecords.dkim2.type || 'CNAME',
+        host: dnsRecords.dkim2.host,
+        value: dnsRecords.dkim2.data, // CRITICAL: Use .data not .value
+        ttl: 300,
+        valid: dnsRecords.dkim2.valid || false
+      }
+    });
+  } else {
+    console.error('❌ DKIM2 record missing or incomplete!');
+    throw new Error('DKIM2 record not found in DNS configuration');
+  }
+
+  console.log(`✅ Generated ${instructionsArray.length} DNS instructions`);
+
+  // Return formatted instructions
+  return {
     domain: domain.domain,
     status: domain.verification_status,
-    records: [
-      {
-        step: 1,
-        title: 'Add CNAME Record (Mail)',
-        description: 'Links your domain to SendGrid\'s mail servers',
-        required: true,
-        record: dnsRecords.mail_cname || {
-          type: 'CNAME',
-          host: `mail.${domain.domain}`,
-          value: 'Please verify SendGrid configuration',
-          ttl: 300
-        }
-      },
-      {
-        step: 2,
-        title: 'Add DKIM Record 1',
-        description: 'First cryptographic signature for email authentication',
-        required: true,
-        record: {
-          type: 'CNAME',
-          host: dnsRecords.dkim1.host,
-          value: dnsRecords.dkim1.data,
-          ttl: 300,
-          valid: dnsRecords.dkim1.valid
-        }
-      },
-      {
-        step: 3,
-        title: 'Add DKIM Record 2',
-        description: 'Second cryptographic signature for email authentication',
-        required: true,
-        record: {
-          type: 'CNAME',
-          host: dnsRecords.dkim2.host,
-          value: dnsRecords.dkim2.data,
-          ttl: 300,
-          valid: dnsRecords.dkim2.valid
-        }
-      }
-    ],
+    records: instructionsArray,
     notes: [
-      'DNS propagation can take 5-30 minutes',
-      'After adding records, click "Verify Domain"',
-      'All records must be added for verification to succeed'
+      'Add all DNS records to your domain registrar (GoDaddy, Namecheap, Cloudflare, etc.)',
+      'DNS propagation can take anywhere from 5 minutes to 48 hours',
+      'After adding all records, click "Verify Domain" to check your configuration',
+      `Once verified, emails will be sent from addresses like: user@mail.${domain.domain}`
     ]
   };
-
-  return instructions;
 }
 
 /**
