@@ -54,7 +54,7 @@ export default function NamecheapGuide({ instructions }: NamecheapGuideProps) {
               Step {index + 2}: {record.title}
             </h4>
             <p className="text-sm text-gray-600 mb-3">{record.description}</p>
-            <DNSRecordRow record={record.record} />
+            <DNSRecordRow instruction={record} />
             
             <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-4">
               <p className="text-sm font-medium text-gray-900 mb-2">In Namecheap:</p>

@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * Edge Function: Domain Management
+ * Edge Function: Domain Management - FIXED ROUTING
  * ============================================================================
  * 
  * Purpose: Handle all custom domain operations including add, verify, list,
@@ -8,11 +8,11 @@
  * 
  * Endpoints:
  * - POST /manage-domain/add - Add new domain
- * - POST /manage-domain/verify/:id - Trigger domain verification
+ * - POST /manage-domain/verify/{domainId} - Trigger domain verification
  * - GET /manage-domain/list - List user's domains
- * - DELETE /manage-domain/:id - Remove domain
- * - PATCH /manage-domain/:id/set-default - Set as default domain
- * - GET /manage-domain/:id/dns - Get DNS configuration instructions
+ * - DELETE /manage-domain/{domainId} - Remove domain
+ * - PATCH /manage-domain/{domainId}/set-default - Set as default domain
+ * - GET /manage-domain/{domainId}/dns - Get DNS configuration instructions
  * 
  * Dependencies:
  * - Supabase client for database operations
@@ -74,14 +74,11 @@ function validateDomain(domain: string): { valid: boolean; error?: string } {
 }
 
 /**
- * Checks if user has access to domain features based on plan
+ * Checks if user's plan supports custom domains
  */
 function checkDomainFeatureAccess(planType: string): boolean {
-  if (TESTING_MODE) {
-    console.log('🧪 TESTING_MODE enabled - allowing domain access for all plans');
-    return true;
-  }
-  return planType === 'pro' || planType === 'pro_plus';
+  const allowedPlans = ['pro', 'pro_plus'];
+  return allowedPlans.includes(planType.toLowerCase());
 }
 
 /**
@@ -91,10 +88,29 @@ function checkDomainFeatureAccess(planType: string): boolean {
  */
 
 /**
- * Creates domain authentication in SendGrid
+ * Creates a new domain in SendGrid
  */
 async function createSendGridDomain(domain: string) {
-  console.log(`📧 Creating domain in SendGrid: ${domain}`);
+  if (TESTING_MODE) {
+    console.log('⚠️  TESTING MODE: Skipping SendGrid API call');
+    return {
+      id: 'test-sendgrid-id-' + Date.now(),
+      dns_records: {
+        dkim1: {
+          host: `s1._domainkey.${domain}`,
+          type: 'CNAME',
+          data: 'example.sendgrid.net',
+          valid: false
+        },
+        dkim2: {
+          host: `s2._domainkey.${domain}`,
+          type: 'CNAME',
+          data: 'example2.sendgrid.net',
+          valid: false
+        }
+      }
+    };
+  }
 
   const response = await fetch('https://api.sendgrid.com/v3/whitelabel/domains', {
     method: 'POST',
@@ -112,50 +128,36 @@ async function createSendGridDomain(domain: string) {
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    console.error('❌ SendGrid domain creation failed:', error);
-    throw new Error(`Failed to create domain in SendGrid: ${error}`);
+    const errorData = await response.json();
+    throw new Error(`SendGrid API error: ${errorData.errors?.[0]?.message || 'Unknown error'}`);
   }
 
   const data = await response.json();
-  console.log('✅ Domain created in SendGrid:', data.id);
-
   return {
     id: data.id,
     dns_records: {
-      spf: {
-        host: data.dns.mail_cname?.host || domain,
-        type: 'TXT',
-        data: data.dns.mail_cname?.data || `v=spf1 include:sendgrid.net ~all`,
-        valid: false
-      },
-      dkim1: {
-        host: data.dns.dkim1?.host || `s1._domainkey.${domain}`,
-        type: 'CNAME',
-        data: data.dns.dkim1?.data || '',
-        valid: false
-      },
-      dkim2: {
-        host: data.dns.dkim2?.host || `s2._domainkey.${domain}`,
-        type: 'CNAME',
-        data: data.dns.dkim2?.data || '',
-        valid: false
-      },
-      mail_cname: data.dns.mail_cname ? {
-        host: data.dns.mail_cname.host,
-        type: 'CNAME',
-        data: data.dns.mail_cname.data,
-        valid: false
-      } : null
+      dkim1: data.dns.dkim1,
+      dkim2: data.dns.dkim2,
+      mail_cname: data.dns.mail_cname
     }
   };
 }
 
 /**
- * Validates domain in SendGrid (checks DNS records)
+ * Validates domain in SendGrid
  */
 async function validateSendGridDomain(sendgridDomainId: string) {
-  console.log(`🔍 Validating domain in SendGrid: ${sendgridDomainId}`);
+  if (TESTING_MODE) {
+    console.log('⚠️  TESTING MODE: Simulating SendGrid validation');
+    return {
+      valid: true,
+      validation_results: {
+        dkim1: { valid: true },
+        dkim2: { valid: true },
+        mail_cname: { valid: true }
+      }
+    };
+  }
 
   const response = await fetch(
     `https://api.sendgrid.com/v3/whitelabel/domains/${sendgridDomainId}/validate`,
@@ -169,43 +171,28 @@ async function validateSendGridDomain(sendgridDomainId: string) {
   );
 
   if (!response.ok) {
-    const error = await response.text();
-    console.error('❌ SendGrid validation failed:', error);
-    throw new Error(`Failed to validate domain: ${error}`);
+    throw new Error('Failed to validate domain with SendGrid');
   }
 
   const data = await response.json();
-  console.log('📊 Validation results:', data);
-
-  return {
-    valid: data.valid || false,
-    validation_results: data.validation_results || {}
-  };
+  return data;
 }
 
 /**
  * Deletes domain from SendGrid
  */
 async function deleteSendGridDomain(sendgridDomainId: string) {
-  console.log(`🗑️  Deleting domain from SendGrid: ${sendgridDomainId}`);
-
-  const response = await fetch(
-    `https://api.sendgrid.com/v3/whitelabel/domains/${sendgridDomainId}`,
-    {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${SENDGRID_API_KEY}`
-      }
-    }
-  );
-
-  if (!response.ok && response.status !== 404) {
-    const error = await response.text();
-    console.error('❌ SendGrid deletion failed:', error);
-    throw new Error(`Failed to delete domain: ${error}`);
+  if (TESTING_MODE) {
+    console.log('⚠️  TESTING MODE: Skipping SendGrid deletion');
+    return;
   }
 
-  console.log('✅ Domain deleted from SendGrid');
+  await fetch(`https://api.sendgrid.com/v3/whitelabel/domains/${sendgridDomainId}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${SENDGRID_API_KEY}`
+    }
+  });
 }
 
 /**
@@ -548,26 +535,12 @@ async function getDNSInstructions(supabase: any, userId: string, domainId: strin
           ttl: 300,
           valid: dnsRecords.dkim2.valid
         }
-      },
-      {
-        step: 4,
-        title: 'Add SPF Record (Optional but Recommended)',
-        description: 'Authorizes SendGrid to send emails on your behalf',
-        required: false,
-        record: {
-          type: 'TXT',
-          host: domain.domain,
-          value: 'v=spf1 include:sendgrid.net ~all',
-          ttl: 300,
-          valid: dnsRecords.spf?.valid
-        }
       }
     ],
     notes: [
-      'DNS changes can take 5-30 minutes to propagate',
-      'Some DNS providers use "@" instead of the domain name for the root domain',
-      'TTL (Time To Live) of 300 seconds (5 minutes) is recommended for faster updates',
-      'After adding all records, click "Verify Domain" to check the configuration'
+      'DNS propagation can take 5-30 minutes',
+      'After adding records, click "Verify Domain"',
+      'All records must be added for verification to succeed'
     ]
   };
 
@@ -576,28 +549,28 @@ async function getDNSInstructions(supabase: any, userId: string, domainId: strin
 
 /**
  * ============================================================================
- * MAIN REQUEST HANDLER
+ * MAIN HANDLER
  * ============================================================================
  */
 
 serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
-    // Get authorization token
+    // Get auth token
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       throw new Error('Missing authorization header');
     }
 
-    // Create Supabase client
+    // Initialize Supabase client
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false
+        autoRefreshToken: false,
+        persistSession: false
       },
       global: {
         headers: {
@@ -606,13 +579,16 @@ serve(async (req: Request) => {
       }
     });
 
-    // Get user from token
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      throw new Error('Invalid authorization token');
+    // Verify user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(
+      authHeader.replace('Bearer ', '')
+    );
+
+    if (authError || !user) {
+      throw new Error('Invalid authentication token');
     }
 
-    // Get user profile to check plan
+    // Get user's plan type
     const { data: profile } = await supabase
       .from('profiles')
       .select('plan_type')
@@ -621,23 +597,27 @@ serve(async (req: Request) => {
 
     const planType = profile?.plan_type || 'free';
 
-    // Parse URL and determine action
+    // Parse URL path
     const url = new URL(req.url);
     const pathParts = url.pathname.split('/').filter(Boolean);
-    const action = pathParts[1]; // manage-domain/[action]
-    const domainId = pathParts[2]; // for actions that need ID
+    // pathParts[0] = 'manage-domain' (base path)
+    // pathParts[1] = action OR domainId
+    // pathParts[2] = additional path segment (e.g., 'dns', 'set-default')
 
-    console.log(`🎯 Action: ${action}, Domain ID: ${domainId || 'N/A'}, User: ${user.id}`);
+    console.log(`🎯 Path parts: ${JSON.stringify(pathParts)}, User: ${user.id}`);
 
     let result;
 
-    // Route to appropriate handler
+    // Route to appropriate handler - FIXED ROUTING LOGIC
     switch (req.method) {
       case 'POST':
-        if (action === 'add') {
+        if (pathParts[1] === 'add') {
+          // POST /manage-domain/add
           const { domain } = await req.json();
           result = await addDomain(supabase, user.id, domain, planType);
-        } else if (action === 'verify' && domainId) {
+        } else if (pathParts[1] === 'verify' && pathParts[2]) {
+          // POST /manage-domain/verify/{domainId}
+          const domainId = pathParts[2];
           result = await verifyDomain(supabase, user.id, domainId);
         } else {
           throw new Error('Invalid POST action');
@@ -645,9 +625,12 @@ serve(async (req: Request) => {
         break;
 
       case 'GET':
-        if (action === 'list') {
+        if (pathParts[1] === 'list') {
+          // GET /manage-domain/list
           result = await listDomains(supabase, user.id);
-        } else if (domainId && pathParts[3] === 'dns') {
+        } else if (pathParts[1] && pathParts[2] === 'dns') {
+          // GET /manage-domain/{domainId}/dns
+          const domainId = pathParts[1];
           result = await getDNSInstructions(supabase, user.id, domainId);
         } else {
           throw new Error('Invalid GET action');
@@ -655,7 +638,9 @@ serve(async (req: Request) => {
         break;
 
       case 'DELETE':
-        if (domainId) {
+        if (pathParts[1]) {
+          // DELETE /manage-domain/{domainId}
+          const domainId = pathParts[1];
           result = await deleteDomain(supabase, user.id, domainId);
         } else {
           throw new Error('Domain ID required for DELETE');
@@ -663,7 +648,9 @@ serve(async (req: Request) => {
         break;
 
       case 'PATCH':
-        if (domainId && pathParts[3] === 'set-default') {
+        if (pathParts[1] && pathParts[2] === 'set-default') {
+          // PATCH /manage-domain/{domainId}/set-default
+          const domainId = pathParts[1];
           result = await setDefaultDomain(supabase, user.id, domainId);
         } else {
           throw new Error('Invalid PATCH action');

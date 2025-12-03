@@ -80,7 +80,7 @@ export default function GenericGuide({ instructions }: GenericGuideProps) {
                   Record {index + 1}: {record.title}
                 </h5>
                 <p className="text-sm text-gray-600 mb-3">{record.description}</p>
-                <DNSRecordRow record={record.record} />
+                <DNSRecordRow instruction={record} />
                 
                 {/* Generic instructions */}
                 <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-3">

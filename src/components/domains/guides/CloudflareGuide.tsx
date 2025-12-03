@@ -66,7 +66,7 @@ export default function CloudflareGuide({ instructions }: CloudflareGuideProps) 
             <p className="text-sm text-gray-600 mb-3">{record.description}</p>
             
             {/* DNS Record Display Component */}
-            <DNSRecordRow record={record.record} />
+            <DNSRecordRow instruction={record} />
             
             {/* Cloudflare-specific field mapping */}
             <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-4">
