@@ -13,6 +13,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
     "@types/dompurify": "^3.0.5",
+    "@types/react-beautiful-dnd": "^13.1.8",
     "@types/recharts": "^1.8.29",
     "axios": "^1.13.2",
     "dompurify": "^3.3.0",
@@ -22,6 +23,8 @@
     "lucide-react": "^0.344.0",
     "papaparse": "^5.5.3",
     "react": "^18.3.1",
+    "react-beautiful-dnd": "^13.1.1",
+    "react-colorful": "^5.6.1",
     "react-dom": "^18.3.1",
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^7.9.6",
