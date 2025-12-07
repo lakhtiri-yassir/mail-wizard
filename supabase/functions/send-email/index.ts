@@ -190,17 +190,59 @@ async function determineSenderEmail(
 
 /**
  * Replaces personalization fields in email content
+ * Supports both old format {{field}} and new format {{MERGE:field}}
  */
 function replacePersonalizationFields(template: string, contact: any): string {
   if (!template) return '';
-  
-  return template
-    .replace(/\{\{firstname\}\}/gi, contact.first_name || '[First Name]')
-    .replace(/\{\{lastname\}\}/gi, contact.last_name || '[Last Name]')
-    .replace(/\{\{company\}\}/gi, contact.company || '[Company]')
-    .replace(/\{\{role\}\}/gi, contact.role || '[Role]')
-    .replace(/\{\{industry\}\}/gi, contact.industry || '[Industry]')
-    .replace(/\{\{email\}\}/gi, contact.email);
+
+  let processed = template;
+
+  // New format: {{MERGE:field_name}}
+  processed = processed
+    .replace(/\{\{MERGE:first_name\}\}/gi, contact.first_name || '')
+    .replace(/\{\{MERGE:last_name\}\}/gi, contact.last_name || '')
+    .replace(/\{\{MERGE:email\}\}/gi, contact.email || '')
+    .replace(/\{\{MERGE:company\}\}/gi, contact.company || '')
+    .replace(/\{\{MERGE:role\}\}/gi, contact.role || '')
+    .replace(/\{\{MERGE:industry\}\}/gi, contact.industry || '');
+
+  // Old format: {{field}} (for backward compatibility)
+  processed = processed
+    .replace(/\{\{firstname\}\}/gi, contact.first_name || '')
+    .replace(/\{\{lastname\}\}/gi, contact.last_name || '')
+    .replace(/\{\{company\}\}/gi, contact.company || '')
+    .replace(/\{\{role\}\}/gi, contact.role || '')
+    .replace(/\{\{industry\}\}/gi, contact.industry || '')
+    .replace(/\{\{email\}\}/gi, contact.email || '');
+
+  return processed;
+}
+
+/**
+ * Injects system links and variables into email template
+ */
+function injectSystemLinks(
+  html: string,
+  campaignId: string,
+  contactId: string,
+  recipientEmail: string,
+  fromEmail: string,
+  subject: string,
+  companyName: string
+): string {
+  const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://mailwizard.io';
+
+  // Generate system URLs
+  const unsubscribeUrl = `${frontendUrl}/unsubscribe?email=${encodeURIComponent(recipientEmail)}&campaign=${campaignId}&contact=${contactId}`;
+  const viewInBrowserUrl = `${frontendUrl}/email/view/${campaignId}/${contactId}`;
+
+  // Replace all system merge tags
+  return html
+    .replace(/\{\{UNSUBSCRIBE_URL\}\}/g, unsubscribeUrl)
+    .replace(/\{\{VIEW_IN_BROWSER_URL\}\}/g, viewInBrowserUrl)
+    .replace(/\{\{FROM_EMAIL\}\}/g, fromEmail)
+    .replace(/\{\{SUBJECT_LINE\}\}/g, subject)
+    .replace(/\{\{COMPANY_NAME\}\}/g, companyName);
 }
 
 /**
@@ -303,6 +345,20 @@ serve(async (req: Request) => {
     if (Object.keys(personalization).length > 0) {
       personalizedHtml = replacePersonalizationFields(html, personalization);
       personalizedSubject = replacePersonalizationFields(subject, personalization);
+    }
+
+    // Inject system links and variables (unsubscribe, view in browser, etc.)
+    if (campaign_id && contact_id) {
+      const companyName = profile?.full_name || from_name || 'Mail Wizard';
+      personalizedHtml = injectSystemLinks(
+        personalizedHtml,
+        campaign_id,
+        contact_id,
+        to,
+        senderInfo.email,
+        personalizedSubject,
+        companyName
+      );
     }
 
     // Prepare SendGrid payload
