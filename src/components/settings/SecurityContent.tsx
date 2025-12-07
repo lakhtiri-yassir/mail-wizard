@@ -11,15 +11,10 @@
 import { useState, useEffect } from 'react';
 import {
   Lock,
-  Shield,
-  Smartphone,
   Monitor,
   Clock,
-  AlertCircle,
-  CheckCircle,
   XCircle,
-  Trash2,
-  RefreshCw
+  Trash2
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -36,7 +31,7 @@ interface SecurityEvent {
 }
 
 export default function SecurityContent() {
-  const [activeSection, setActiveSection] = useState<'password' | '2fa' | 'sessions' | 'activity'>('password');
+  const [activeSection, setActiveSection] = useState<'password' | 'sessions' | 'activity'>('password');
 
   return (
     <div className="space-y-6">
@@ -53,17 +48,6 @@ export default function SecurityContent() {
           >
             <Lock className="inline w-4 h-4 mr-2" />
             Password
-          </button>
-          <button
-            onClick={() => setActiveSection('2fa')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${
-              activeSection === '2fa'
-                ? 'bg-gold text-black'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <Smartphone className="inline w-4 h-4 mr-2" />
-            Two-Factor Auth
           </button>
           <button
             onClick={() => setActiveSection('sessions')}
@@ -92,7 +76,6 @@ export default function SecurityContent() {
 
       {/* Section Content */}
       {activeSection === 'password' && <ChangePasswordSection />}
-      {activeSection === '2fa' && <TwoFactorAuthSection />}
       {activeSection === 'sessions' && <ActiveSessionsSection />}
       {activeSection === 'activity' && <ActivityLogSection />}
     </div>
@@ -237,97 +220,6 @@ function ChangePasswordSection() {
           Change Password
         </Button>
       </form>
-    </div>
-  );
-}
-
-/**
- * Two-Factor Authentication Section
- */
-function TwoFactorAuthSection() {
-  const [enabled, setEnabled] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    checkTwoFactorStatus();
-  }, []);
-
-  const checkTwoFactorStatus = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data } = await supabase
-        .from('user_2fa')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-
-      setEnabled(!!data);
-    } catch (error) {
-      console.error('Error checking 2FA status:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="card max-w-2xl">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-full bg-purple/10 flex items-center justify-center">
-          <Shield className="w-5 h-5 text-purple" />
-        </div>
-        <div>
-          <h2 className="text-xl font-serif font-bold">Two-Factor Authentication</h2>
-          <p className="text-sm text-gray-600">Add an extra layer of security to your account</p>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <RefreshCw className="w-6 h-6 text-purple animate-spin" />
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <h3 className="font-semibold text-lg mb-2">
-                  {enabled ? 'Two-Factor Authentication Enabled' : 'Two-Factor Authentication Disabled'}
-                </h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  {enabled
-                    ? 'Your account is protected with two-factor authentication. You will need to enter a code from your authenticator app when signing in.'
-                    : 'Two-factor authentication adds an extra layer of security by requiring a code from your phone in addition to your password.'}
-                </p>
-                {enabled ? (
-                  <div className="flex items-center gap-2 text-green-700 bg-green-50 px-3 py-2 rounded-lg inline-flex">
-                    <CheckCircle className="w-4 h-4" />
-                    <span className="text-sm font-medium">Active</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-gray-600 bg-gray-100 px-3 py-2 rounded-lg inline-flex">
-                    <AlertCircle className="w-4 h-4" />
-                    <span className="text-sm font-medium">Not Active</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800 font-medium mb-2">Coming Soon</p>
-            <p className="text-sm text-blue-700">
-              Two-factor authentication setup is currently under development. This feature will allow you to:
-            </p>
-            <ul className="text-sm text-blue-700 space-y-1 mt-2 ml-4">
-              <li>Scan a QR code with your authenticator app</li>
-              <li>Generate backup codes for emergency access</li>
-              <li>Verify your setup before enabling</li>
-            </ul>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

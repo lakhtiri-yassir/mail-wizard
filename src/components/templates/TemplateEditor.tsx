@@ -454,7 +454,7 @@ export const TemplateEditor: React.FC = () => {
                       minHeight: '600px'
                     }}
                     title="Email Preview"
-                    sandbox="allow-same-origin"
+                    sandbox="allow-same-origin allow-scripts"
                   />
                 </div>
               </div>

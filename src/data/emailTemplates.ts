@@ -9,10 +9,12 @@
  * - Web-safe fonts
  */
 
+import { PROFESSIONAL_TEMPLATES } from './professionalTemplates';
+
 export interface EmailTemplate {
   id: string;
   name: string;
-  category: 'marketing' | 'sales' | 'newsletter' | 'announcement';
+  category: 'marketing' | 'sales' | 'newsletter' | 'announcement' | 'transactional';
   thumbnail: string;
   description: string;
   supportsPersonalization: boolean;
@@ -536,7 +538,8 @@ Best,
   </table>
 </body>
 </html>`
-  }
+  },
+  ...PROFESSIONAL_TEMPLATES
 ];
 
 export function getTemplateById(id: string): EmailTemplate | undefined {

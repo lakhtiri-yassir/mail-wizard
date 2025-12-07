@@ -83,29 +83,6 @@ export default function ImageUpload({ onSelectImage, selectedUrl }: ImageUploadP
   }
 
   /**
-   * Ensures storage bucket exists
-   */
-  async function ensureBucketExists() {
-    try {
-      const { data: buckets } = await supabase.storage.listBuckets();
-      const bucketExists = buckets?.some(b => b.name === 'media_library');
-
-      if (!bucketExists) {
-        const { error } = await supabase.storage.createBucket('media_library', {
-          public: true,
-          fileSizeLimit: 5242880, // 5MB
-          allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-        });
-
-        if (error) throw error;
-        console.log('✅ Created media_library bucket');
-      }
-    } catch (error) {
-      console.error('Bucket creation error:', error);
-    }
-  }
-
-  /**
    * Handles file upload
    */
   async function handleUpload(files: FileList | null) {
@@ -128,9 +105,6 @@ export default function ImageUpload({ onSelectImage, selectedUrl }: ImageUploadP
 
     try {
       setUploading(true);
-
-      // Ensure bucket exists
-      await ensureBucketExists();
 
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
