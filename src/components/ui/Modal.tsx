@@ -40,3 +40,5 @@ export const Modal = ({ isOpen, onClose, title, children, maxWidth = 'md' }: Mod
     </div>
   );
 };
+
+export default Modal;
