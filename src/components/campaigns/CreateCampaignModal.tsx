@@ -31,13 +31,14 @@
  */
 
 import { useState, useEffect } from 'react';
-import { X, ChevronRight, ChevronLeft, Check, Mail, Users, Calendar, FileText, Loader2 } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft, Check, Mail, Users, Calendar, FileText, Loader2, Code, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { EMAIL_TEMPLATES } from '../../data/emailTemplates';
 import toast from 'react-hot-toast';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 // ============================================================================
 // INTERFACES
@@ -60,15 +61,16 @@ interface CampaignFormData {
   fromName: string;
   fromEmail: string;
   replyTo: string;
-  
+
   // Step 2: Template
   templateId: string;
-  
+  customHtml: string | null;
+
   // Step 3: Recipients
   sendToMode: 'all' | 'groups' | 'contacts';
   selectedGroups: Set<string>;
   selectedContacts: Set<string>;
-  
+
   // Step 4: Schedule
   scheduleMode: 'now' | 'later';
   scheduledDate: string;
@@ -107,6 +109,9 @@ export default function CreateCampaignModal({ onClose, onSuccess }: CreateCampai
   const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
+  const navigate = useNavigate();
+  const location = useLocation();
+
   // Form data state
   const [formData, setFormData] = useState<CampaignFormData>({
     // Step 1
@@ -117,15 +122,16 @@ export default function CreateCampaignModal({ onClose, onSuccess }: CreateCampai
     fromName: profile?.full_name || '',
     fromEmail: user?.email || '',
     replyTo: user?.email || '',
-    
+
     // Step 2
     templateId: '',
-    
+    customHtml: null,
+
     // Step 3
     sendToMode: 'all',
     selectedGroups: new Set<string>(),
     selectedContacts: new Set<string>(),
-    
+
     // Step 4
     scheduleMode: 'now',
     scheduledDate: new Date().toISOString().split('T')[0],
@@ -142,6 +148,29 @@ export default function CreateCampaignModal({ onClose, onSuccess }: CreateCampai
   useEffect(() => {
     loadContactsAndGroups();
   }, []);
+
+  // Handle return from template editor
+  useEffect(() => {
+    if (location.state?.completedTemplate) {
+      const { html, campaignName, campaignSubject } = location.state.completedTemplate;
+
+      // Update form data with template HTML
+      setFormData(prev => ({
+        ...prev,
+        customHtml: html,
+        name: campaignName,
+        subject: campaignSubject
+      }));
+
+      // Set to step 3 (recipients)
+      setCurrentStep(3);
+
+      // Clear navigation state
+      window.history.replaceState({}, document.title);
+
+      toast.success('Template customization complete! Now select your recipients.');
+    }
+  }, [location.state]);
 
   /**
    * Load contacts and groups from database
@@ -285,10 +314,8 @@ export default function CreateCampaignModal({ onClose, onSuccess }: CreateCampai
     }
 
     if (step === 2) {
-      // Template Selection
-      if (!formData.templateId) {
-        newErrors.templateId = 'Please select a template';
-      }
+      // Template Selection or Custom HTML
+      // Note: Validation handled in handleNext for step 2 due to dual-path logic
     }
 
     if (step === 3) {
@@ -329,6 +356,13 @@ export default function CreateCampaignModal({ onClose, onSuccess }: CreateCampai
    * Go to next step
    */
   function handleNext() {
+    // Special handling for Step 2 (template selection)
+    if (currentStep === 2) {
+      // Validation will be handled by Step2 component based on input mode
+      // This allows template editor navigation
+      return;
+    }
+
     if (validateStep(currentStep)) {
       setCurrentStep(prev => prev + 1);
     }
@@ -567,6 +601,9 @@ export default function CreateCampaignModal({ onClose, onSuccess }: CreateCampai
                   errors={errors}
                   updateField={updateField}
                   userPlan={profile?.plan_type || 'free'}
+                  navigate={navigate}
+                  setCurrentStep={setCurrentStep}
+                  setErrors={setErrors}
                 />
               )}
 
@@ -788,12 +825,19 @@ function Step2TemplateSelection({
   errors,
   updateField,
   userPlan,
+  navigate,
+  setCurrentStep,
+  setErrors,
 }: {
   formData: CampaignFormData;
   errors: Record<string, string>;
   updateField: (field: keyof CampaignFormData, value: any) => void;
   userPlan: string;
+  navigate: any;
+  setCurrentStep: (step: number) => void;
+  setErrors: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
+  const [inputMode, setInputMode] = useState<'custom' | 'template'>('template');
   const [selectedCategory, setSelectedCategory] = useState('all');
 
   const categories = [
@@ -810,95 +854,270 @@ function Step2TemplateSelection({
 
   const isPlusUser = userPlan === 'pro_plus';
 
+  function handleNext() {
+    if (inputMode === 'custom') {
+      // Validate custom HTML
+      if (!formData.customHtml || formData.customHtml.trim().length === 0) {
+        setErrors(prev => ({ ...prev, customHtml: 'HTML code is required' }));
+        return;
+      }
+      // Clear template selection if custom HTML is used
+      updateField('templateId', '');
+      // Proceed to step 3
+      setCurrentStep(3);
+    } else if (inputMode === 'template') {
+      if (!formData.templateId) {
+        setErrors(prev => ({ ...prev, templateId: 'Please select a template' }));
+        return;
+      }
+      // Navigate to template editor with campaign context
+      const params = new URLSearchParams({
+        template: formData.templateId,
+        createMode: 'true',
+        name: formData.name,
+        subject: formData.subject
+      });
+      navigate(`/app/template-editor?${params.toString()}`);
+      // Modal stays open in background
+      return;
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold mb-4">Choose Your Template</h3>
+        <h3 className="text-lg font-semibold mb-4">Choose How to Create Your Email</h3>
         <p className="text-gray-600 text-sm mb-6">
-          Select a professionally designed template for your campaign.
+          Select a template to customize or paste your own HTML code.
         </p>
       </div>
 
-      {errors.templateId && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-          {errors.templateId}
-        </div>
-      )}
-
-      {/* Category Filter */}
-      <div className="flex gap-2 flex-wrap border-b pb-4">
-        {categories.map((category) => (
-          <button
-            key={category.id}
-            onClick={() => setSelectedCategory(category.id)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              selectedCategory === category.id
-                ? 'bg-purple text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {category.name}
-          </button>
-        ))}
-      </div>
-
-      {/* Template Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2">
-        {filteredTemplates.map((template) => {
-          const isLocked = template.isPlusOnly && !isPlusUser;
-          const isSelected = formData.templateId === template.id;
-
-          return (
-            <button
-              key={template.id}
-              onClick={() => !isLocked && updateField('templateId', template.id)}
-              disabled={isLocked}
-              className={`relative border-2 rounded-lg p-4 text-left transition-all ${
-                isSelected
-                  ? 'border-purple bg-purple/5'
-                  : isLocked
-                  ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
-                  : 'border-gray-200 hover:border-purple/50'
-              }`}
-            >
-              {/* Selected Indicator */}
-              {isSelected && (
-                <div className="absolute top-2 right-2 w-6 h-6 bg-purple rounded-full flex items-center justify-center">
-                  <Check size={16} className="text-white" />
-                </div>
-              )}
-
-              {/* Plus Badge */}
-              {template.isPlusOnly && (
-                <div className="absolute top-2 left-2 bg-gold text-black text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
-                  <Mail size={12} />
-                  PRO+
-                </div>
-              )}
-
-              {/* Template Info */}
-              <div className="mt-8">
-                <h4 className="font-semibold mb-1">{template.name}</h4>
-                <p className="text-sm text-gray-600 mb-2">{template.description}</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                    {template.category}
-                  </span>
-                  {isLocked && (
-                    <span className="text-xs text-gray-500">Upgrade to unlock</span>
-                  )}
-                </div>
+      {/* Input Mode Toggle */}
+      <div className="grid grid-cols-2 gap-4">
+        <button
+          onClick={() => setInputMode('custom')}
+          className={`p-6 border-2 rounded-lg transition-all ${
+            inputMode === 'custom'
+              ? 'border-purple bg-purple/5'
+              : 'border-gray-300 hover:border-gray-400'
+          }`}
+        >
+          <div className="flex flex-col items-center gap-3">
+            <Code size={32} className={inputMode === 'custom' ? 'text-purple' : 'text-gray-400'} />
+            <div className="text-center">
+              <div className="font-semibold">Custom HTML Code</div>
+              <div className="text-sm text-gray-600 mt-1">
+                Paste your own HTML email code
               </div>
-            </button>
-          );
-        })}
+            </div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setInputMode('template')}
+          className={`p-6 border-2 rounded-lg transition-all ${
+            inputMode === 'template'
+              ? 'border-purple bg-purple/5'
+              : 'border-gray-300 hover:border-gray-400'
+          }`}
+        >
+          <div className="flex flex-col items-center gap-3">
+            <FileText size={32} className={inputMode === 'template' ? 'text-purple' : 'text-gray-400'} />
+            <div className="text-center">
+              <div className="font-semibold">Select Template</div>
+              <div className="text-sm text-gray-600 mt-1">
+                Choose from our professional templates
+              </div>
+            </div>
+          </div>
+        </button>
       </div>
 
-      {filteredTemplates.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
-          No templates found in this category.
+      {/* Custom HTML Input */}
+      {inputMode === 'custom' && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-semibold mb-2">
+              HTML Email Code <span className="text-red-600">*</span>
+            </label>
+            <textarea
+              value={formData.customHtml || ''}
+              onChange={(e) => {
+                updateField('customHtml', e.target.value);
+                setErrors(prev => {
+                  const newErrors = { ...prev };
+                  delete newErrors.customHtml;
+                  return newErrors;
+                });
+              }}
+              className="w-full h-96 px-4 py-3 border-2 border-black rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple resize-y"
+              placeholder="<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    /* Your email styles */
+  </style>
+</head>
+<body>
+  <!-- Your email content -->
+</body>
+</html>"
+            />
+            {errors.customHtml && (
+              <p className="mt-2 text-sm text-red-600">{errors.customHtml}</p>
+            )}
+            <p className="mt-2 text-xs text-gray-600">
+              Paste your complete HTML email code. Make sure to include inline CSS styles for best email client compatibility.
+            </p>
+          </div>
+
+          <div className="bg-gold/10 border-2 border-gold/30 rounded-lg p-4">
+            <div className="flex gap-3">
+              <AlertCircle size={20} className="text-gold flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <div className="font-semibold mb-1">HTML Email Best Practices:</div>
+                <ul className="list-disc list-inside space-y-1 text-gray-700">
+                  <li>Use inline CSS styles instead of &lt;style&gt; tags</li>
+                  <li>Use tables for layout (email clients have limited CSS support)</li>
+                  <li>Test in multiple email clients before sending</li>
+                  <li>Include alt text for images</li>
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
       )}
+
+      {/* Template Selection */}
+      {inputMode === 'template' && (
+        <>
+          {errors.templateId && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              {errors.templateId}
+            </div>
+          )}
+
+          {/* Category Filter */}
+          <div className="flex gap-2 flex-wrap border-b pb-4">
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => setSelectedCategory(category.id)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  selectedCategory === category.id
+                    ? 'bg-purple text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {category.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Template Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2">
+            {filteredTemplates.map((template) => {
+              const isLocked = template.isPlusOnly && !isPlusUser;
+              const isSelected = formData.templateId === template.id;
+
+              return (
+                <button
+                  key={template.id}
+                  onClick={() => {
+                    if (!isLocked) {
+                      updateField('templateId', template.id);
+                      setErrors(prev => {
+                        const newErrors = { ...prev };
+                        delete newErrors.templateId;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  disabled={isLocked}
+                  className={`relative border-2 rounded-lg p-4 text-left transition-all ${
+                    isSelected
+                      ? 'border-purple bg-purple/5'
+                      : isLocked
+                      ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
+                      : 'border-gray-200 hover:border-purple/50'
+                  }`}
+                >
+                  {/* Selected Indicator */}
+                  {isSelected && (
+                    <div className="absolute top-2 right-2 w-6 h-6 bg-purple rounded-full flex items-center justify-center">
+                      <Check size={16} className="text-white" />
+                    </div>
+                  )}
+
+                  {/* Plus Badge */}
+                  {template.isPlusOnly && (
+                    <div className="absolute top-2 left-2 bg-gold text-black text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
+                      <Mail size={12} />
+                      PRO+
+                    </div>
+                  )}
+
+                  {/* Template Info */}
+                  <div className="mt-8">
+                    <h4 className="font-semibold mb-1">{template.name}</h4>
+                    <p className="text-sm text-gray-600 mb-2">{template.description}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                        {template.category}
+                      </span>
+                      {isLocked && (
+                        <span className="text-xs text-gray-500">Upgrade to unlock</span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {filteredTemplates.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              No templates found in this category.
+            </div>
+          )}
+
+          {/* Template Selected Confirmation */}
+          {formData.templateId && (
+            <div className="mt-6 bg-purple/5 border-2 border-purple rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CheckCircle size={20} className="text-purple" />
+                  <div>
+                    <div className="font-semibold">Template Selected</div>
+                    <div className="text-sm text-gray-600">
+                      You'll customize this template in the next step
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="s"
+                  onClick={() => updateField('templateId', '')}
+                >
+                  Change
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Next Button */}
+      <div className="flex justify-end pt-4 border-t">
+        <Button
+          variant="primary"
+          onClick={handleNext}
+          icon={<ChevronRight size={18} />}
+          iconPosition="end"
+        >
+          {inputMode === 'template' ? 'Customize Template' : 'Next'}
+        </Button>
+      </div>
     </div>
   );
 }

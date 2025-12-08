@@ -36,10 +36,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AppLayout } from '../app/AppLayout';
 import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
 import SectionEditor, { Section } from './SectionEditor';
 import ColorPicker from './ColorPicker';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
+import { Save, X, Info } from 'lucide-react';
 
 interface EmailSettings {
   companyName: string;
@@ -70,6 +72,12 @@ export const TemplateEditor: React.FC = () => {
     fontFamily: 'Arial, Helvetica, sans-serif'
   });
   const [loading, setLoading] = useState(false);
+
+  // Save template modal state
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Initialize with default sections
   useEffect(() => {
@@ -279,16 +287,6 @@ export const TemplateEditor: React.FC = () => {
    * Saves template and continues to campaign creation
    */
   async function handleSave() {
-    if (isCreationMode && !campaignName) {
-      toast.error('Campaign name is required');
-      return;
-    }
-
-    if (isCreationMode && !campaignSubject) {
-      toast.error('Subject line is required');
-      return;
-    }
-
     if (sections.length === 0) {
       toast.error('Please add at least one section to your email');
       return;
@@ -300,33 +298,22 @@ export const TemplateEditor: React.FC = () => {
       const htmlContent = generateEmailHTML();
 
       if (isCreationMode) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Not authenticated');
-
-        const { data: campaign, error } = await supabase
-          .from('campaigns')
-          .insert({
-            user_id: user.id,
-            name: campaignName,
-            subject: campaignSubject,
-            content: {
+        // Campaign creation mode - navigate back with data
+        navigate('/app/campaigns', {
+          state: {
+            completedTemplate: {
               html: htmlContent,
               sections: sections,
-              settings: emailSettings
-            },
-            status: 'draft',
-            from_email: user.email,
-            from_name: emailSettings.companyName
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-
-        toast.success('Campaign created successfully');
-        navigate('/app/campaigns');
+              settings: emailSettings,
+              campaignName: campaignName,
+              campaignSubject: campaignSubject
+            }
+          }
+        });
+        toast.success('Template customization complete!');
       } else {
-        toast.success('Template saved');
+        // Normal template editing mode - just close
+        toast.success('Template updated');
         navigate('/app/templates');
       }
     } catch (err: any) {
@@ -334,6 +321,67 @@ export const TemplateEditor: React.FC = () => {
       toast.error(err.message || 'Failed to save');
     } finally {
       setLoading(false);
+    }
+  }
+
+  /**
+   * Save template to library
+   */
+  async function handleSaveTemplate() {
+    if (!templateName.trim()) {
+      setSaveError('Template name is required');
+      return;
+    }
+
+    if (templateName.length > 255) {
+      setSaveError('Template name must be 255 characters or less');
+      return;
+    }
+
+    if (sections.length === 0) {
+      toast.error('Please add at least one section to your template');
+      return;
+    }
+
+    setSavingTemplate(true);
+    setSaveError(null);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const htmlContent = generateEmailHTML();
+
+      const { error } = await supabase
+        .from('templates')
+        .insert({
+          user_id: user.id,
+          name: templateName.trim(),
+          category: 'custom',
+          content: {
+            html: htmlContent,
+            sections: sections,
+            settings: emailSettings
+          },
+          is_locked: false,
+          thumbnail: null,
+        });
+
+      if (error) throw error;
+
+      toast.success(`Template "${templateName}" saved successfully!`);
+      setShowSaveModal(false);
+      setTemplateName('');
+
+      // Optional: redirect to templates page
+      navigate('/app/templates');
+
+    } catch (err: any) {
+      console.error('Failed to save template:', err);
+      setSaveError(err.message || 'Failed to save template');
+      toast.error('Failed to save template');
+    } finally {
+      setSavingTemplate(false);
     }
   }
 
@@ -358,12 +406,23 @@ export const TemplateEditor: React.FC = () => {
               >
                 Cancel
               </Button>
+
+              {!isCreationMode && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowSaveModal(true)}
+                  icon={<Save size={18} />}
+                >
+                  Save Template
+                </Button>
+              )}
+
               <Button
                 variant="primary"
                 onClick={handleSave}
                 loading={loading}
               >
-                {isCreationMode ? 'Create Campaign' : 'Save Template'}
+                {isCreationMode ? 'Next Step' : 'Save & Close'}
               </Button>
             </div>
           </div>
@@ -462,6 +521,74 @@ export const TemplateEditor: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Save Template Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setShowSaveModal(false)} />
+          <div className="relative bg-white rounded-lg max-w-md w-full shadow-2xl border-2 border-black">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 className="text-xl font-serif font-bold">Save Template</h3>
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold mb-2">
+                    Template Name <span className="text-red-600">*</span>
+                  </label>
+                  <Input
+                    type="text"
+                    value={templateName}
+                    onChange={(e) => {
+                      setTemplateName(e.target.value);
+                      setSaveError(null);
+                    }}
+                    placeholder="My Awesome Email Template"
+                    error={saveError}
+                  />
+                  <p className="mt-1 text-xs text-gray-600">
+                    {templateName.length}/255 characters
+                  </p>
+                </div>
+
+                <div className="bg-purple/5 border border-purple/20 rounded-lg p-4">
+                  <div className="flex gap-3">
+                    <Info size={18} className="text-purple flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-gray-700">
+                      This template will be saved to "My Templates" and can be reused for future campaigns.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+              <Button
+                variant="secondary"
+                onClick={() => setShowSaveModal(false)}
+                disabled={savingTemplate}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleSaveTemplate}
+                loading={savingTemplate}
+                disabled={savingTemplate || !templateName.trim()}
+              >
+                Save Template
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 };
