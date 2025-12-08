@@ -83,6 +83,7 @@ export function Campaigns() {
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [recipientCount, setRecipientCount] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [modalKey, setModalKey] = useState(0);
 
   // View details modal state
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -398,6 +399,7 @@ useEffect(() => {
             size="md"
             icon={Plus}
             onClick={() => {
+              setModalKey(prev => prev + 1); 
               setShowCreateModal(true);
             }}
           >
@@ -568,10 +570,14 @@ useEffect(() => {
         )}
         {showCreateModal && (
           <CreateCampaignModal
-            onClose={() => setShowCreateModal(false)}
+            key={modalKey} // Reset modal state when key changes
+            onClose={() => {
+              setModalKey(prev => prev + 1);
+              setShowCreateModal(false);
+            }}
             onSuccess={(campaign) => {
               window.history.replaceState({}, document.title);
-
+              setModalKey(prev => prev + 1);
               setShowCreateModal(false);
               fetchCampaigns();
               toast.success("Campaign created successfully!");
