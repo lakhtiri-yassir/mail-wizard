@@ -171,7 +171,10 @@ export default function CreateCampaignModal({ onClose, onSuccess }: CreateCampai
       window.history.replaceState({}, document.title);
 
       toast.success('Template customization complete! Now select your recipients.');
+    } else {
+      setCurrentStep(1);
     }
+    
   }, [location.state]);
 
   /**
