@@ -2,33 +2,7 @@
  * ============================================================================
  * Template Editor - Complete Section-Based Email Builder
  * ============================================================================
- *
- * NEW TEMPLATE EDITOR STRUCTURE
- *
- * Layout:
- * ┌──────────────────────────────────────────────────┐
- * │  Template Editor - [Template Name]               │
- * ├───────────────────┬──────────────────────────────┤
- * │                   │                              │
- * │  [Section Editor] │   [Live Preview]             │
- * │                   │                              │
- * │  Drag sections    │   Iframe with                │
- * │  Add/Remove       │   real HTML output           │
- * │  Edit content     │                              │
- * │  Change colors    │   Updates in                 │
- * │  Upload images    │   real-time                  │
- * │                   │                              │
- * ├───────────────────┴──────────────────────────────┤
- * │  [Cancel]              [Save & Use Template]     │
- * └──────────────────────────────────────────────────┘
- *
- * Features:
- * - Drag and drop section reordering
- * - Real-time preview updates
- * - Image upload to Supabase Storage
- * - Color customization
- * - Complete HTML email generation
- *
+ * FIXED VERSION - Resolves React Error #130
  * ============================================================================
  */
 
@@ -52,13 +26,13 @@ interface EmailSettings {
   fontFamily: string;
 }
 
-export default function TemplateEditor() {
+function TemplateEditor() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Template data
-  const templateId = searchParams.get('template');
+  // Template data - FIXED: Proper searchParams access
+  const templateId = searchParams.get('template') || '';
   const isCreationMode = searchParams.get('createMode') === 'true';
   const campaignName = searchParams.get('name') || '';
   const campaignSubject = searchParams.get('subject') || '';
@@ -68,7 +42,8 @@ export default function TemplateEditor() {
     isCreationMode,
     campaignName,
     campaignSubject,
-    templateId
+    templateId,
+    searchParams: Object.fromEntries(searchParams.entries())
   });
 
   // State
@@ -325,7 +300,7 @@ export default function TemplateEditor() {
         });
 
         toast.success('Template customized! Now select recipients.');
-        return; // Stop here, don't continue to finally block
+        return;
       } else {
         // Normal template editing mode - just close
         toast.success('Template updated');
@@ -387,8 +362,6 @@ export default function TemplateEditor() {
       toast.success(`Template "${templateName}" saved successfully!`);
       setShowSaveModal(false);
       setTemplateName('');
-
-      // Optional: redirect to templates page
       navigate('/app/templates');
 
     } catch (err: any) {
@@ -426,8 +399,8 @@ export default function TemplateEditor() {
                 <Button
                   variant="secondary"
                   onClick={() => setShowSaveModal(true)}
-                  icon={<Save size={18} />}
                 >
+                  <Save size={18} className="mr-2" />
                   Save Template
                 </Button>
               )}
@@ -435,9 +408,9 @@ export default function TemplateEditor() {
               <Button
                 variant="primary"
                 onClick={handleSave}
-                loading={loading}
+                disabled={loading}
               >
-                {isCreationMode ? 'Continue to Recipients' : 'Save & Close'}
+                {loading ? 'Saving...' : (isCreationMode ? 'Continue to Recipients' : 'Save & Close')}
               </Button>
             </div>
           </div>
@@ -565,7 +538,7 @@ export default function TemplateEditor() {
                       setSaveError(null);
                     }}
                     placeholder="My Awesome Email Template"
-                    error={saveError}
+                    error={saveError || undefined}
                   />
                   <p className="mt-1 text-xs text-gray-600">
                     {templateName.length}/255 characters
@@ -594,10 +567,9 @@ export default function TemplateEditor() {
               <Button
                 variant="primary"
                 onClick={handleSaveTemplate}
-                loading={savingTemplate}
                 disabled={savingTemplate || !templateName.trim()}
               >
-                Save Template
+                {savingTemplate ? 'Saving...' : 'Save Template'}
               </Button>
             </div>
           </div>
@@ -606,3 +578,5 @@ export default function TemplateEditor() {
     </AppLayout>
   );
 }
+
+export default TemplateEditor;
