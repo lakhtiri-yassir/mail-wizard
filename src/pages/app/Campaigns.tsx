@@ -554,7 +554,7 @@ export function Campaigns() {
             onClose={() => setShowCreateModal(false)}
             onSuccess={(campaign) => {
               setShowCreateModal(false);
-              loadCampaigns();
+              fetchCampaigns();
               toast.success("Campaign created successfully!");
             }}
           />
