@@ -1,8 +1,8 @@
 /**
  * Campaigns Page
- * 
+ *
  * Campaign management with advanced recipient selection and status tracking.
- * 
+ *
  * FEATURES:
  * - Display campaign status (Draft, Scheduled, Sent)
  * - Show email metrics (opens, clicks, bounces)
@@ -10,14 +10,23 @@
  * - Real-time recipient count preview
  */
 
-import { useState, useEffect } from 'react';
-import { Plus, Mail, Send, Eye, Clock, CheckCircle, AlertCircle } from 'lucide-react';
-import { AppLayout } from '../../components/app/AppLayout';
-import { useAuth } from '../../contexts/AuthContext';
-import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
-import { supabase } from '../../lib/supabase';
-import toast from 'react-hot-toast';
+import { useState, useEffect } from "react";
+import {
+  Plus,
+  Mail,
+  Send,
+  Eye,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+} from "lucide-react";
+import { AppLayout } from "../../components/app/AppLayout";
+import { useAuth } from "../../contexts/AuthContext";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { supabase } from "../../lib/supabase";
+import toast from "react-hot-toast";
+import CreateCampaignModal from "../../components/campaigns/CreateCampaignModal";
 
 interface Campaign {
   id: string;
@@ -48,7 +57,7 @@ interface Group {
   contact_count: number;
 }
 
-type SendMode = 'all' | 'groups' | 'contacts' | 'mixed';
+type SendMode = "all" | "groups" | "contacts" | "mixed";
 
 export function Campaigns() {
   const { user } = useAuth();
@@ -57,16 +66,21 @@ export function Campaigns() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
-  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(
+    null
+  );
   const [sending, setSending] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
   // Send modal state
-  const [sendMode, setSendMode] = useState<SendMode>('all');
-  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
+  const [sendMode, setSendMode] = useState<SendMode>("all");
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(
+    new Set()
+  );
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [recipientCount, setRecipientCount] = useState(0);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -89,16 +103,16 @@ export function Campaigns() {
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('campaigns')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .from("campaigns")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
       setCampaigns(data || []);
     } catch (error: any) {
-      console.error('Error fetching campaigns:', error);
-      toast.error('Failed to load campaigns');
+      console.error("Error fetching campaigns:", error);
+      toast.error("Failed to load campaigns");
     } finally {
       setLoading(false);
     }
@@ -109,16 +123,16 @@ export function Campaigns() {
 
     try {
       const { data, error } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .order('email');
+        .from("contacts")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .order("email");
 
       if (error) throw error;
       setContacts(data || []);
     } catch (error: any) {
-      console.error('Error fetching contacts:', error);
+      console.error("Error fetching contacts:", error);
     }
   };
 
@@ -127,29 +141,29 @@ export function Campaigns() {
 
     try {
       const { data, error } = await supabase
-        .from('contact_groups')
-        .select('id, name, description, contact_count')
-        .eq('user_id', user.id)
-        .order('name');
+        .from("contact_groups")
+        .select("id, name, description, contact_count")
+        .eq("user_id", user.id)
+        .order("name");
 
       if (error) throw error;
       setGroups(data || []);
     } catch (error: any) {
-      console.error('Error fetching groups:', error);
-      toast.error('Failed to load groups');
+      console.error("Error fetching groups:", error);
+      toast.error("Failed to load groups");
     }
   };
 
   const handleOpenSendModal = (campaign: Campaign) => {
     setSelectedCampaign(campaign);
     setShowSendModal(true);
-    setSendMode('all');
+    setSendMode("all");
     setSelectedContacts(new Set());
     setSelectedGroups(new Set());
   };
 
   const handleToggleGroup = (groupId: string) => {
-    setSelectedGroups(prev => {
+    setSelectedGroups((prev) => {
       const next = new Set(prev);
       if (next.has(groupId)) {
         next.delete(groupId);
@@ -161,7 +175,7 @@ export function Campaigns() {
   };
 
   const handleToggleContact = (contactId: string) => {
-    setSelectedContacts(prev => {
+    setSelectedContacts((prev) => {
       const next = new Set(prev);
       if (next.has(contactId)) {
         next.delete(contactId);
@@ -176,64 +190,64 @@ export function Campaigns() {
     if (selectedContacts.size === contacts.length) {
       setSelectedContacts(new Set());
     } else {
-      setSelectedContacts(new Set(contacts.map(c => c.id)));
+      setSelectedContacts(new Set(contacts.map((c) => c.id)));
     }
   };
 
   const getRecipientList = async (): Promise<Contact[]> => {
     if (!user) return [];
 
-    if (sendMode === 'all') {
-      return contacts.filter(c => c.status === 'active');
+    if (sendMode === "all") {
+      return contacts.filter((c) => c.status === "active");
     }
 
-    if (sendMode === 'contacts') {
-      return contacts.filter(c => 
-        selectedContacts.has(c.id) && c.status === 'active'
+    if (sendMode === "contacts") {
+      return contacts.filter(
+        (c) => selectedContacts.has(c.id) && c.status === "active"
       );
     }
 
-    if (sendMode === 'groups') {
+    if (sendMode === "groups") {
       const groupIds = Array.from(selectedGroups);
       if (groupIds.length === 0) {
         return [];
       }
 
       const { data: groupMembers, error } = await supabase
-        .from('contact_group_members')
-        .select('contact_id')
-        .in('group_id', groupIds);
+        .from("contact_group_members")
+        .select("contact_id")
+        .in("group_id", groupIds);
 
       if (error) {
-        console.error('Error fetching group members:', error);
-        toast.error('Failed to load group members');
+        console.error("Error fetching group members:", error);
+        toast.error("Failed to load group members");
         return [];
       }
 
-      const contactIds = groupMembers.map(gm => gm.contact_id);
-      return contacts.filter(c => 
-        contactIds.includes(c.id) && c.status === 'active'
+      const contactIds = groupMembers.map((gm) => gm.contact_id);
+      return contacts.filter(
+        (c) => contactIds.includes(c.id) && c.status === "active"
       );
     }
 
-    if (sendMode === 'mixed') {
+    if (sendMode === "mixed") {
       let recipientSet = new Set<string>();
 
       if (selectedGroups.size > 0) {
         const groupIds = Array.from(selectedGroups);
         const { data: groupMembers } = await supabase
-          .from('contact_group_members')
-          .select('contact_id')
-          .in('group_id', groupIds);
+          .from("contact_group_members")
+          .select("contact_id")
+          .in("group_id", groupIds);
 
-        groupMembers?.forEach(gm => recipientSet.add(gm.contact_id));
+        groupMembers?.forEach((gm) => recipientSet.add(gm.contact_id));
       }
 
-      selectedContacts.forEach(id => recipientSet.add(id));
+      selectedContacts.forEach((id) => recipientSet.add(id));
 
       const recipientIds = Array.from(recipientSet);
-      return contacts.filter(c => 
-        recipientIds.includes(c.id) && c.status === 'active'
+      return contacts.filter(
+        (c) => recipientIds.includes(c.id) && c.status === "active"
       );
     }
 
@@ -251,7 +265,7 @@ export function Campaigns() {
     const recipients = await getRecipientList();
 
     if (recipients.length === 0) {
-      toast.error('No recipients selected');
+      toast.error("No recipients selected");
       return;
     }
 
@@ -260,32 +274,36 @@ export function Campaigns() {
 
     setSending(selectedCampaign.id);
     setShowSendModal(false);
-    const toastId = toast.loading(`Sending to ${recipients.length} recipient(s)...`);
+    const toastId = toast.loading(
+      `Sending to ${recipients.length} recipient(s)...`
+    );
 
     try {
-      const { data, error } = await supabase.functions.invoke('send-email', {
+      const { data, error } = await supabase.functions.invoke("send-email", {
         body: {
           campaign_id: selectedCampaign.id,
           from_email: user?.email,
-          from_name: user?.user_metadata?.full_name || 'Email Wizard',
+          from_name: user?.user_metadata?.full_name || "Email Wizard",
           subject: selectedCampaign.subject,
           html_body: selectedCampaign.content.html,
-          recipients: recipients.map(contact => ({
+          recipients: recipients.map((contact) => ({
             email: contact.email,
             contact_id: contact.id,
             first_name: contact.first_name,
-            last_name: contact.last_name
-          }))
-        }
+            last_name: contact.last_name,
+          })),
+        },
       });
 
       if (error) throw error;
 
-      toast.success(`Campaign sent to ${data.sent} recipient(s)!`, { id: toastId });
+      toast.success(`Campaign sent to ${data.sent} recipient(s)!`, {
+        id: toastId,
+      });
       fetchCampaigns(); // Refresh to show updated status
     } catch (error: any) {
-      console.error('Error sending campaign:', error);
-      toast.error(error.message || 'Failed to send campaign', { id: toastId });
+      console.error("Error sending campaign:", error);
+      toast.error(error.message || "Failed to send campaign", { id: toastId });
     } finally {
       setSending(null);
     }
@@ -295,27 +313,27 @@ export function Campaigns() {
    * Get status badge styling and icon
    */
   const getStatusBadge = (campaign: Campaign) => {
-    if (campaign.status === 'sent') {
+    if (campaign.status === "sent") {
       return {
         icon: <CheckCircle size={14} />,
-        text: 'Sent',
-        className: 'bg-green-100 text-green-800 border-green-200'
+        text: "Sent",
+        className: "bg-green-100 text-green-800 border-green-200",
       };
     }
-    
-    if (campaign.status === 'scheduled') {
+
+    if (campaign.status === "scheduled") {
       return {
         icon: <Clock size={14} />,
-        text: 'Scheduled',
-        className: 'bg-blue-100 text-blue-800 border-blue-200'
+        text: "Scheduled",
+        className: "bg-blue-100 text-blue-800 border-blue-200",
       };
     }
-    
+
     // draft
     return {
       icon: <AlertCircle size={14} />,
-      text: 'Draft',
-      className: 'bg-gray-100 text-gray-800 border-gray-200'
+      text: "Draft",
+      className: "bg-gray-100 text-gray-800 border-gray-200",
     };
   };
 
@@ -338,15 +356,14 @@ export function Campaigns() {
   /**
    * Filter campaigns by search and status
    */
-  const filteredCampaigns = campaigns.filter(campaign => {
-    const matchesSearch = 
+  const filteredCampaigns = campaigns.filter((campaign) => {
+    const matchesSearch =
       campaign.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       campaign.subject.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesStatus = 
-      statusFilter === 'all' || 
-      campaign.status === statusFilter;
-    
+
+    const matchesStatus =
+      statusFilter === "all" || campaign.status === statusFilter;
+
     return matchesSearch && matchesStatus;
   });
 
@@ -356,13 +373,17 @@ export function Campaigns() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-serif font-bold mb-2">Campaigns</h1>
-            <p className="text-gray-600">Create and manage your email campaigns.</p>
+            <p className="text-gray-600">
+              Create and manage your email campaigns.
+            </p>
           </div>
           <Button
             variant="primary"
             size="md"
             icon={Plus}
-            onClick={() => {/* Create campaign modal */}}
+            onClick={() => {
+              setShowCreateModal(true);
+            }}
           >
             Create Campaign
           </Button>
@@ -379,7 +400,7 @@ export function Campaigns() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <select 
+            <select
               className="input-base w-auto"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -403,9 +424,9 @@ export function Campaigns() {
             <Mail size={48} className="text-gray-300 mx-auto mb-4" />
             <p className="text-gray-600 mb-2">No campaigns found</p>
             <p className="text-sm text-gray-500">
-              {searchQuery || statusFilter !== 'all'
-                ? 'Try adjusting your search or filter'
-                : 'Create your first campaign to get started'}
+              {searchQuery || statusFilter !== "all"
+                ? "Try adjusting your search or filter"
+                : "Create your first campaign to get started"}
             </p>
           </div>
         ) : (
@@ -416,42 +437,61 @@ export function Campaigns() {
               const clickRate = getClickRate(campaign);
 
               return (
-                <div key={campaign.id} className="card hover:shadow-lg transition-shadow">
+                <div
+                  key={campaign.id}
+                  className="card hover:shadow-lg transition-shadow"
+                >
                   <div className="flex items-start justify-between">
                     {/* Campaign Info */}
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-xl font-serif font-bold">{campaign.name}</h3>
-                        <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border ${statusBadge.className}`}>
+                        <h3 className="text-xl font-serif font-bold">
+                          {campaign.name}
+                        </h3>
+                        <span
+                          className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border ${statusBadge.className}`}
+                        >
                           {statusBadge.icon}
                           {statusBadge.text}
                         </span>
                       </div>
-                      
+
                       <p className="text-gray-600 mb-4">{campaign.subject}</p>
-                      
+
                       {/* Metrics Row */}
                       <div className="flex gap-6 text-sm">
-                        {campaign.status === 'sent' ? (
+                        {campaign.status === "sent" ? (
                           <>
                             <div>
                               <span className="text-gray-600">Sent to: </span>
-                              <span className="font-semibold">{campaign.recipients_count || 0}</span>
+                              <span className="font-semibold">
+                                {campaign.recipients_count || 0}
+                              </span>
                             </div>
                             <div>
                               <span className="text-gray-600">Opens: </span>
-                              <span className="font-semibold">{campaign.opens || 0}</span>
-                              <span className="text-gray-500 ml-1">({openRate}%)</span>
+                              <span className="font-semibold">
+                                {campaign.opens || 0}
+                              </span>
+                              <span className="text-gray-500 ml-1">
+                                ({openRate}%)
+                              </span>
                             </div>
                             <div>
                               <span className="text-gray-600">Clicks: </span>
-                              <span className="font-semibold">{campaign.clicks || 0}</span>
-                              <span className="text-gray-500 ml-1">({clickRate}%)</span>
+                              <span className="font-semibold">
+                                {campaign.clicks || 0}
+                              </span>
+                              <span className="text-gray-500 ml-1">
+                                ({clickRate}%)
+                              </span>
                             </div>
                             {campaign.bounces > 0 && (
                               <div>
                                 <span className="text-gray-600">Bounces: </span>
-                                <span className="font-semibold text-red-600">{campaign.bounces}</span>
+                                <span className="font-semibold text-red-600">
+                                  {campaign.bounces}
+                                </span>
                               </div>
                             )}
                           </>
@@ -473,10 +513,11 @@ export function Campaigns() {
                     {/* Action Buttons */}
                     <div className="text-right ml-4">
                       <div className="text-sm text-gray-600 mb-3">
-                        Created {new Date(campaign.created_at).toLocaleDateString()}
+                        Created{" "}
+                        {new Date(campaign.created_at).toLocaleDateString()}
                       </div>
-                      
-                      {campaign.status === 'draft' && (
+
+                      {campaign.status === "draft" && (
                         <Button
                           variant="primary"
                           size="sm"
@@ -488,13 +529,15 @@ export function Campaigns() {
                           Send Campaign
                         </Button>
                       )}
-                      
-                      {campaign.status === 'sent' && (
+
+                      {campaign.status === "sent" && (
                         <Button
                           variant="secondary"
                           size="sm"
                           icon={Eye}
-                          onClick={() => {/* View campaign details */}}
+                          onClick={() => {
+                            /* View campaign details */
+                          }}
                         >
                           View Details
                         </Button>
@@ -506,6 +549,16 @@ export function Campaigns() {
             })}
           </div>
         )}
+        {showCreateModal && (
+          <CreateCampaignModal
+            onClose={() => setShowCreateModal(false)}
+            onSuccess={(campaign) => {
+              setShowCreateModal(false);
+              loadCampaigns();
+              toast.success("Campaign created successfully!");
+            }}
+          />
+        )}
 
         {/* Send Campaign Modal */}
         {showSendModal && selectedCampaign && (
@@ -513,9 +566,11 @@ export function Campaigns() {
             <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
               <div className="border-b border-black p-6">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-serif font-bold">Send Campaign: {selectedCampaign.name}</h2>
-                  <button 
-                    onClick={() => setShowSendModal(false)} 
+                  <h2 className="text-2xl font-serif font-bold">
+                    Send Campaign: {selectedCampaign.name}
+                  </h2>
+                  <button
+                    onClick={() => setShowSendModal(false)}
                     className="text-gray-500 hover:text-black text-2xl leading-none"
                   >
                     ×
@@ -526,44 +581,46 @@ export function Campaigns() {
               <div className="p-6 overflow-y-auto flex-1">
                 {/* Send Mode Selection */}
                 <div className="mb-6">
-                  <label className="block text-sm font-medium mb-3">Send To:</label>
+                  <label className="block text-sm font-medium mb-3">
+                    Send To:
+                  </label>
                   <div className="flex flex-wrap gap-3">
                     <button
-                      onClick={() => setSendMode('all')}
+                      onClick={() => setSendMode("all")}
                       className={`px-4 py-2 rounded-full font-medium transition-colors ${
-                        sendMode === 'all' 
-                          ? 'bg-gold text-black' 
-                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        sendMode === "all"
+                          ? "bg-gold text-black"
+                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                       }`}
                     >
                       All Contacts ({contacts.length})
                     </button>
                     <button
-                      onClick={() => setSendMode('groups')}
+                      onClick={() => setSendMode("groups")}
                       className={`px-4 py-2 rounded-full font-medium transition-colors ${
-                        sendMode === 'groups' 
-                          ? 'bg-gold text-black' 
-                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        sendMode === "groups"
+                          ? "bg-gold text-black"
+                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                       }`}
                     >
                       Select Groups
                     </button>
                     <button
-                      onClick={() => setSendMode('contacts')}
+                      onClick={() => setSendMode("contacts")}
                       className={`px-4 py-2 rounded-full font-medium transition-colors ${
-                        sendMode === 'contacts' 
-                          ? 'bg-gold text-black' 
-                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        sendMode === "contacts"
+                          ? "bg-gold text-black"
+                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                       }`}
                     >
                       Select Contacts
                     </button>
                     <button
-                      onClick={() => setSendMode('mixed')}
+                      onClick={() => setSendMode("mixed")}
                       className={`px-4 py-2 rounded-full font-medium transition-colors ${
-                        sendMode === 'mixed' 
-                          ? 'bg-gold text-black' 
-                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        sendMode === "mixed"
+                          ? "bg-gold text-black"
+                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                       }`}
                     >
                       Mixed Selection
@@ -572,7 +629,7 @@ export function Campaigns() {
                 </div>
 
                 {/* Groups Selection */}
-                {(sendMode === 'groups' || sendMode === 'mixed') && (
+                {(sendMode === "groups" || sendMode === "mixed") && (
                   <div className="mb-6">
                     <h3 className="font-medium mb-3">
                       Select Groups ({selectedGroups.size} selected)
@@ -580,12 +637,13 @@ export function Campaigns() {
                     <div className="border border-gray-300 rounded-lg max-h-60 overflow-y-auto">
                       {groups.length === 0 ? (
                         <p className="text-gray-500 p-4 text-center text-sm">
-                          No groups available. Create groups in the Contacts page.
+                          No groups available. Create groups in the Contacts
+                          page.
                         </p>
                       ) : (
                         groups.map((group) => (
-                          <label 
-                            key={group.id} 
+                          <label
+                            key={group.id}
                             className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
                           >
                             <input
@@ -595,9 +653,13 @@ export function Campaigns() {
                               className="mr-3 w-4 h-4"
                             />
                             <div className="flex-1">
-                              <p className="font-medium text-sm">{group.name}</p>
+                              <p className="font-medium text-sm">
+                                {group.name}
+                              </p>
                               {group.description && (
-                                <p className="text-xs text-gray-600">{group.description}</p>
+                                <p className="text-xs text-gray-600">
+                                  {group.description}
+                                </p>
                               )}
                               <p className="text-xs text-purple-600 mt-1">
                                 {group.contact_count} contacts
@@ -611,7 +673,7 @@ export function Campaigns() {
                 )}
 
                 {/* Individual Contacts Selection */}
-                {(sendMode === 'contacts' || sendMode === 'mixed') && (
+                {(sendMode === "contacts" || sendMode === "mixed") && (
                   <div className="mb-6">
                     <div className="flex justify-between items-center mb-3">
                       <h3 className="font-medium">
@@ -621,7 +683,9 @@ export function Campaigns() {
                         onClick={handleSelectAllContacts}
                         className="text-sm text-gold hover:text-yellow-600 font-medium"
                       >
-                        {selectedContacts.size === contacts.length ? 'Deselect All' : 'Select All'}
+                        {selectedContacts.size === contacts.length
+                          ? "Deselect All"
+                          : "Select All"}
                       </button>
                     </div>
                     <div className="border border-gray-300 rounded-lg max-h-60 overflow-y-auto">
@@ -631,8 +695,8 @@ export function Campaigns() {
                         </p>
                       ) : (
                         contacts.map((contact) => (
-                          <label 
-                            key={contact.id} 
+                          <label
+                            key={contact.id}
                             className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
                           >
                             <input
@@ -648,7 +712,9 @@ export function Campaigns() {
                                   : contact.email}
                               </p>
                               {contact.first_name && contact.last_name && (
-                                <p className="text-xs text-gray-600">{contact.email}</p>
+                                <p className="text-xs text-gray-600">
+                                  {contact.email}
+                                </p>
                               )}
                             </div>
                           </label>
@@ -661,8 +727,11 @@ export function Campaigns() {
                 {/* Recipient Count Preview */}
                 <div className="bg-gold/10 border border-gold rounded-lg p-4">
                   <p className="text-sm font-medium">
-                    <span className="text-gold font-bold text-lg">{recipientCount}</span>{' '}
-                    recipient{recipientCount !== 1 ? 's' : ''} will receive this campaign
+                    <span className="text-gold font-bold text-lg">
+                      {recipientCount}
+                    </span>{" "}
+                    recipient{recipientCount !== 1 ? "s" : ""} will receive this
+                    campaign
                   </p>
                 </div>
               </div>
