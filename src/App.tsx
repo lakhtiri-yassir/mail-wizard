@@ -9,7 +9,7 @@ import { Dashboard } from './pages/app/Dashboard';
 import { Contacts } from './pages/app/Contacts';
 import { Campaigns } from './pages/app/Campaigns';
 import { Templates } from './pages/app/Templates';
-import { TemplateEditor } from './components/templates/TemplateEditor';
+import TemplateEditor from './components/templates/TemplateEditor';
 import { Analytics } from './pages/app/Analytics';
 import { Settings } from './pages/app/Settings';
 import Domains from './pages/app/settings/Domains'; // ADD THIS IMPORT

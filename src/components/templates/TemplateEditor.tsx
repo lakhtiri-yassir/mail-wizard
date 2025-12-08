@@ -51,7 +51,7 @@ interface EmailSettings {
   fontFamily: string;
 }
 
-export const TemplateEditor: React.FC = () => {
+export default function TemplateEditor() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -61,6 +61,14 @@ export const TemplateEditor: React.FC = () => {
   const isCreationMode = searchParams.get('createMode') === 'true';
   const campaignName = searchParams.get('name') || '';
   const campaignSubject = searchParams.get('subject') || '';
+
+  // Debug logging
+  console.log('🔍 Template editor mode:', {
+    isCreationMode,
+    campaignName,
+    campaignSubject,
+    templateId
+  });
 
   // State
   const [sections, setSections] = useState<Section[]>([]);
@@ -298,6 +306,9 @@ export const TemplateEditor: React.FC = () => {
       const htmlContent = generateEmailHTML();
 
       if (isCreationMode) {
+        console.log('📧 Template editor in creation mode - returning to campaign');
+        console.log('🔍 Campaign context:', { campaignName, campaignSubject });
+
         // Campaign creation mode - navigate back with data
         navigate('/app/campaigns', {
           state: {
@@ -308,9 +319,12 @@ export const TemplateEditor: React.FC = () => {
               campaignName: campaignName,
               campaignSubject: campaignSubject
             }
-          }
+          },
+          replace: true
         });
-        toast.success('Template customization complete!');
+
+        toast.success('Template customized! Now select recipients.');
+        return; // Stop here, don't continue to finally block
       } else {
         // Normal template editing mode - just close
         toast.success('Template updated');
@@ -422,7 +436,7 @@ export const TemplateEditor: React.FC = () => {
                 onClick={handleSave}
                 loading={loading}
               >
-                {isCreationMode ? 'Next Step' : 'Save & Close'}
+                {isCreationMode ? 'Continue to Recipients' : 'Save & Close'}
               </Button>
             </div>
           </div>

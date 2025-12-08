@@ -12,6 +12,7 @@
  * - GET /manage-domain/list - List user's domains
  * - DELETE /manage-domain/{domainId} - Remove domain
  * - PATCH /manage-domain/{domainId}/set-default - Set as default domain
+ * - PATCH /manage-domain/{domainId}/remove-default - Remove default status
  * - GET /manage-domain/{domainId}/dns - Get DNS configuration instructions
  * 
  * Dependencies:
@@ -593,6 +594,54 @@ async function setDefaultDomain(supabase: any, userId: string, domainId: string)
 }
 
 /**
+ * Removes default status from a domain
+ */
+async function removeDefaultDomain(supabase: any, userId: string, domainId: string) {
+  console.log(`⭐ Removing default status from domain: ${domainId}`);
+
+  // Verify domain exists and belongs to user
+  const { data: domain, error: fetchError } = await supabase
+    .from('sending_domains')
+    .select('*')
+    .eq('id', domainId)
+    .eq('user_id', userId)
+    .single();
+
+  if (fetchError || !domain) {
+    console.error('❌ Domain not found:', fetchError);
+    throw new Error('Domain not found');
+  }
+
+  // Check if domain is currently default
+  if (!domain.is_default) {
+    console.warn('⚠️ Domain is not currently default');
+    throw new Error('Domain is not currently set as default');
+  }
+
+  // Remove default status
+  const { data: updated, error: updateError } = await supabase
+    .from('sending_domains')
+    .update({
+      is_default: false,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', domainId)
+    .select()
+    .single();
+
+  if (updateError) {
+    console.error('❌ Failed to remove default status:', updateError);
+    throw new Error('Failed to remove default status');
+  }
+
+  console.log('✅ Default status removed successfully');
+  return {
+    success: true,
+    domain: updated
+  };
+}
+
+/**
  * Gets DNS configuration instructions for a domain
  */
 async function getDNSInstructions(supabase: any, userId: string, domainId: string) {
@@ -848,6 +897,10 @@ serve(async (req: Request) => {
           // PATCH /manage-domain/{domainId}/set-default
           const domainId = pathParts[1];
           result = await setDefaultDomain(supabase, user.id, domainId);
+        } else if (pathParts[1] && pathParts[2] === 'remove-default') {
+          // PATCH /manage-domain/{domainId}/remove-default
+          const domainId = pathParts[1];
+          result = await removeDefaultDomain(supabase, user.id, domainId);
         } else {
           throw new Error('Invalid PATCH action');
         }
