@@ -376,27 +376,63 @@ const handleSendNow = async (campaign: Campaign) => {
     );
 
     try {
-      const { data, error } = await supabase.functions.invoke("send-email", {
-        body: {
-          campaign_id: selectedCampaign.id,
-          from_email: user?.email,
-          from_name: user?.user_metadata?.full_name || "Email Wizard",
-          subject: selectedCampaign.subject,
-          html_body: selectedCampaign.content.html,
-          recipients: recipients.map((contact) => ({
-            email: contact.email,
-            contact_id: contact.id,
-            first_name: contact.first_name,
-            last_name: contact.last_name,
-          })),
-        },
-      });
+      let successCount = 0;
+      let failedCount = 0;
+      const errors: string[] = [];
 
-      if (error) throw error;
+      // Send emails individually to each recipient
+      for (const recipient of recipients) {
+        try {
+          const { data, error } = await supabase.functions.invoke("send-email", {
+            body: {
+              to: recipient.email,
+              subject: selectedCampaign.subject,
+              html: selectedCampaign.content.html,
+              from_email: user?.email,
+              from_name: user?.user_metadata?.full_name || "Email Wizard",
+              campaign_id: selectedCampaign.id,
+              contact_id: recipient.id,
+              personalization: {
+                first_name: recipient.first_name || "",
+                last_name: recipient.last_name || "",
+              },
+            },
+          });
 
-      toast.success(`Campaign sent to ${data.sent} recipient(s)!`, {
-        id: toastId,
-      });
+          if (error) {
+            failedCount++;
+            errors.push(`${recipient.email}: ${error.message}`);
+            console.error(`Failed to send to ${recipient.email}:`, error);
+          } else {
+            successCount++;
+          }
+        } catch (error: any) {
+          failedCount++;
+          errors.push(`${recipient.email}: ${error.message}`);
+          console.error(`Error sending to ${recipient.email}:`, error);
+        }
+      }
+
+      // Show results
+      if (successCount > 0) {
+        if (failedCount === 0) {
+          toast.success(`Campaign sent to ${successCount} recipient(s)!`, {
+            id: toastId,
+          });
+        } else {
+          toast.success(
+            `Sent to ${successCount} recipient(s). ${failedCount} failed.`,
+            { id: toastId }
+          );
+          console.error("Failed sends:", errors);
+        }
+      } else {
+        toast.error(`Failed to send campaign. ${failedCount} errors.`, {
+          id: toastId,
+        });
+        console.error("All sends failed:", errors);
+      }
+
       fetchCampaigns(); // Refresh to show updated status
     } catch (error: any) {
       console.error("Error sending campaign:", error);
