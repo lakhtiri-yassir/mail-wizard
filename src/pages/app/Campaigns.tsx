@@ -20,6 +20,9 @@ import {
   CheckCircle,
   AlertCircle,
   X,
+  Edit2,
+  Trash2,
+  Play,
 } from "lucide-react";
 import { AppLayout } from "../../components/app/AppLayout";
 import { useAuth } from "../../contexts/AuthContext";
@@ -29,6 +32,8 @@ import { supabase } from "../../lib/supabase";
 import toast from "react-hot-toast";
 import { useLocation } from 'react-router-dom';
 import CreateCampaignModal from "../../components/campaigns/CreateCampaignModal";
+import { EditCampaignModal } from '../../components/campaigns/EditCampaignModal';
+import { DeleteConfirmModal } from '../../components/campaigns/DeleteConfirmModal';
 
 interface Campaign {
   id: string;
@@ -74,6 +79,10 @@ export function Campaigns() {
   const [sending, setSending] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [deletingCampaign, setDeletingCampaign] = useState<Campaign | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [sendingNow, setSendingNow] = useState<string | null>(null);
 
   // Send modal state
   const [sendMode, setSendMode] = useState<SendMode>("all");
@@ -137,6 +146,74 @@ export function Campaigns() {
       setLoading(false);
     }
   };
+
+  /**
+ * Handle edit campaign
+ */
+const handleEdit = (campaign: Campaign) => {
+  setEditingCampaign(campaign);
+};
+
+/**
+ * Handle delete campaign
+ */
+const handleDelete = async () => {
+  if (!deletingCampaign) return;
+  
+  setIsDeleting(true);
+  try {
+    const { error } = await supabase
+      .from('campaigns')
+      .delete()
+      .eq('id', deletingCampaign.id);
+
+    if (error) throw error;
+
+    toast.success('Campaign deleted successfully');
+    setDeletingCampaign(null);
+    fetchCampaigns();
+  } catch (error: any) {
+    console.error('Failed to delete campaign:', error);
+    toast.error(error.message || 'Failed to delete campaign');
+  } finally {
+    setIsDeleting(false);
+  }
+};
+
+/**
+ * Handle send now
+ */
+const handleSendNow = async (campaign: Campaign) => {
+  // Confirm send now
+  if (!confirm(
+    `Send "${campaign.name}" immediately to ${campaign.recipients_count} recipients?\n\n` +
+    `This was originally scheduled for later. This action cannot be undone.`
+  )) {
+    return;
+  }
+
+  setSendingNow(campaign.id);
+  try {
+    // Update status to sending and set scheduled_at to now
+    const { error: updateError } = await supabase
+      .from('campaigns')
+      .update({
+        status: 'sending',
+        scheduled_at: new Date().toISOString(),
+      })
+      .eq('id', campaign.id);
+
+    if (updateError) throw updateError;
+
+    toast.success('Campaign is being sent now!');
+    fetchCampaigns();
+  } catch (error: any) {
+    console.error('Failed to send campaign:', error);
+    toast.error(error.message || 'Failed to send campaign');
+  } finally {
+    setSendingNow(null);
+  }
+};
 
   const fetchContacts = async () => {
     if (!user) return;
@@ -539,6 +616,7 @@ export function Campaigns() {
                         {new Date(campaign.created_at).toLocaleDateString()}
                       </div>
 
+                      {/* DRAFT STATUS - Original Send Button */}
                       {campaign.status === "draft" && (
                         <Button
                           variant="primary"
@@ -552,6 +630,57 @@ export function Campaigns() {
                         </Button>
                       )}
 
+                      {/* SCHEDULED STATUS - Edit, Delete, Send Now Buttons */}
+                      {campaign.status === "scheduled" && (
+                        <div className="flex flex-col gap-2">
+                          {/* Scheduled Time Display */}
+                          <div className="text-sm text-purple font-medium mb-1">
+                            {campaign.scheduled_at && (
+                              <>📅 {new Date(campaign.scheduled_at).toLocaleString()}</>
+                            )}
+                          </div>
+                          
+                          {/* Action Buttons */}
+                          <div className="flex gap-2">
+                            {/* Edit Button */}
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              icon={Edit2}
+                              onClick={() => handleEdit(campaign)}
+                              className="flex-1 border-purple text-purple hover:bg-purple/10"
+                            >
+                              Edit
+                            </Button>
+
+                            {/* Delete Button */}
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              icon={Trash2}
+                              onClick={() => setDeletingCampaign(campaign)}
+                              className="border-red-500 text-red-600 hover:bg-red-50"
+                            >
+                              Delete
+                            </Button>
+
+                            {/* Send Now Button */}
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              icon={Play}
+                              onClick={() => handleSendNow(campaign)}
+                              loading={sendingNow === campaign.id}
+                              disabled={sendingNow === campaign.id}
+                              className="flex-1"
+                            >
+                              Send Now
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SENT STATUS - View Details */}
                       {campaign.status === "sent" && (
                         <Button
                           variant="secondary"
@@ -897,6 +1026,27 @@ export function Campaigns() {
           </div>
         )}
       </div>
+      {/* Edit Campaign Modal */}
+        {editingCampaign && (
+          <EditCampaignModal
+            campaign={editingCampaign}
+            onClose={() => setEditingCampaign(null)}
+            onSuccess={() => {
+              setEditingCampaign(null);
+              fetchCampaigns();
+            }}
+          />
+        )}
+
+        {/* Delete Confirm Modal */}
+        {deletingCampaign && (
+          <DeleteConfirmModal
+            campaign={deletingCampaign}
+            onClose={() => setDeletingCampaign(null)}
+            onConfirm={handleDelete}
+            isDeleting={isDeleting}
+          />
+        )}
     </AppLayout>
   );
 }
