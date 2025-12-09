@@ -17,7 +17,7 @@ import ColorPicker from './ColorPicker';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { Save, X, Info } from 'lucide-react';
-import { EMAIL_TEMPLATES } from '../../data/emailTemplates';
+import { getTemplateSections, getTemplateSettings } from '../../data/templateSections';
 
 interface EmailSettings {
   companyName: string;
@@ -64,33 +64,25 @@ function TemplateEditor() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // BUG FIX #4: Initialize with selected template or default sections
   useEffect(() => {
     if (templateId) {
-      // Load the selected template
-      const selectedTemplate = EMAIL_TEMPLATES.find(t => t.id === templateId);
+      const templateSections = getTemplateSections(templateId);
+      const templateSettings = getTemplateSettings(templateId);
 
-      if (selectedTemplate?.htmlContent) {
-        console.log(`Loading template: ${selectedTemplate.name}`);
-
-        // Parse the template HTML into sections
-        // For now, create a single text section with the template HTML
-        const templateSections: Section[] = [
-          {
-            id: 'template-content',
-            type: 'text',
-            content: {
-              text: selectedTemplate.htmlContent
-            }
-          }
-        ];
-
+      if (templateSections) {
+        console.log(`Loading template sections for: ${templateId}`);
         setSections(templateSections);
+
+        if (templateSettings) {
+          setEmailSettings(prev => ({
+            ...prev,
+            ...templateSettings
+          }));
+        }
         return;
       }
     }
 
-    // Only use default sections if no templateId provided
     const defaultSections: Section[] = [
       {
         id: 'header-1',

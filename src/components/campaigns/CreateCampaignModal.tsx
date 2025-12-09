@@ -93,10 +93,16 @@ interface ContactGroup {
   contact_count: number;
 }
 
+interface VerifiedDomain {
+  id: string;
+  domain: string;
+  verified: boolean;
+}
+
 interface CreateCampaignModalProps {
   onClose: () => void;
   onSuccess: (campaign: Campaign) => void;
-  shouldLoadTemplate?: boolean;  
+  shouldLoadTemplate?: boolean;
 }
 
 // ============================================================================
@@ -113,13 +119,14 @@ export default function CreateCampaignModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [groups, setGroups] = useState<ContactGroup[]>([]);
+  const [verifiedDomains, setVerifiedDomains] = useState<VerifiedDomain[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Generate username from email for default sender
   const username = user?.email?.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+  const defaultDomain = 'mail.mailwizard.io';
 
   // Form data state
   const [formData, setFormData] = useState<CampaignFormData>({
@@ -188,14 +195,10 @@ export default function CreateCampaignModal({
     }
   }, [shouldLoadTemplate, location.state]);
 
-  /**
-   * Load contacts and groups from database
-   */
   async function loadContactsAndGroups() {
     try {
       setLoadingData(true);
 
-      // Load contacts
       const { data: contactsData, error: contactsError } = await supabase
         .from('contacts')
         .select('*')
@@ -204,7 +207,6 @@ export default function CreateCampaignModal({
 
       if (contactsError) throw contactsError;
 
-      // Load groups
       const { data: groupsData, error: groupsError } = await supabase
         .from('contact_groups')
         .select('*')
@@ -213,8 +215,15 @@ export default function CreateCampaignModal({
 
       if (groupsError) throw groupsError;
 
+      const { data: domainsData } = await supabase
+        .from('domains')
+        .select('id, domain, verified')
+        .eq('user_id', user?.id)
+        .eq('verified', true);
+
       setContacts(contactsData || []);
       setGroups(groupsData || []);
+      setVerifiedDomains(domainsData || []);
     } catch (error: any) {
       console.error('Failed to load data:', error);
       toast.error('Failed to load contacts and groups');
@@ -610,6 +619,9 @@ export default function CreateCampaignModal({
               formData={formData}
               errors={errors}
               updateField={updateField}
+              verifiedDomains={verifiedDomains}
+              defaultDomain={defaultDomain}
+              username={username}
             />
           )}
 
@@ -693,18 +705,35 @@ export default function CreateCampaignModal({
 // STEP COMPONENTS
 // ============================================================================
 
-/**
- * Step 1: Campaign Details
- */
 function Step1CampaignDetails({
   formData,
   errors,
   updateField,
+  verifiedDomains,
+  defaultDomain,
+  username,
 }: {
   formData: CampaignFormData;
   errors: Record<string, string>;
   updateField: (field: keyof CampaignFormData, value: any) => void;
+  verifiedDomains: VerifiedDomain[];
+  defaultDomain: string;
+  username: string;
 }) {
+  const [selectedDomain, setSelectedDomain] = useState(defaultDomain);
+  const [localPart, setLocalPart] = useState(username);
+
+  const handleDomainChange = (domain: string) => {
+    setSelectedDomain(domain);
+    updateField('fromEmail', `${localPart}@${domain}`);
+  };
+
+  const handleLocalPartChange = (value: string) => {
+    const sanitized = value.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+    setLocalPart(sanitized);
+    updateField('fromEmail', `${sanitized}@${selectedDomain}`);
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -714,7 +743,6 @@ function Step1CampaignDetails({
         </p>
       </div>
 
-      {/* Campaign Name */}
       <div>
         <label className="block text-sm font-medium mb-2">
           Campaign Name <span className="text-red-500">*</span>
@@ -731,7 +759,6 @@ function Step1CampaignDetails({
         </p>
       </div>
 
-      {/* Description */}
       <div>
         <label className="block text-sm font-medium mb-2">
           Description <span className="text-gray-400">(Optional)</span>
@@ -748,7 +775,6 @@ function Step1CampaignDetails({
         </p>
       </div>
 
-      {/* Subject Line */}
       <div>
         <label className="block text-sm font-medium mb-2">
           Subject Line <span className="text-red-500">*</span>
@@ -765,7 +791,6 @@ function Step1CampaignDetails({
         </p>
       </div>
 
-      {/* Preview Text */}
       <div>
         <label className="block text-sm font-medium mb-2">
           Preview Text <span className="text-gray-400">(Optional)</span>
@@ -785,7 +810,6 @@ function Step1CampaignDetails({
         <h3 className="text-lg font-semibold mb-4">Sender Information</h3>
       </div>
 
-      {/* From Name */}
       <div>
         <label className="block text-sm font-medium mb-2">
           From Name <span className="text-red-500">*</span>
@@ -799,24 +823,43 @@ function Step1CampaignDetails({
         />
       </div>
 
-      {/* From Email */}
       <div>
         <label className="block text-sm font-medium mb-2">
           From Email <span className="text-red-500">*</span>
         </label>
-        <Input
-          type="email"
-          placeholder="hello@yourcompany.com"
-          value={formData.fromEmail}
-          onChange={(e) => updateField('fromEmail', e.target.value)}
-          error={errors.fromEmail}
-        />
-        <p className="text-xs text-gray-500 mt-1">
-          Default: Uses Mail Wizard verified sending domain
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <Input
+              type="text"
+              placeholder="username"
+              value={localPart}
+              onChange={(e) => handleLocalPartChange(e.target.value)}
+              error={errors.fromEmail}
+            />
+          </div>
+          <span className="flex items-center text-gray-500 font-medium">@</span>
+          <div className="flex-1">
+            <select
+              value={selectedDomain}
+              onChange={(e) => handleDomainChange(e.target.value)}
+              className="w-full px-4 py-3 border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-purple bg-white"
+            >
+              <option value={defaultDomain}>{defaultDomain} (Shared)</option>
+              {verifiedDomains.map((domain) => (
+                <option key={domain.id} value={domain.domain}>
+                  {domain.domain} (Verified)
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">
+          {verifiedDomains.length > 0
+            ? 'Select your verified domain or use the shared Mail Wizard domain'
+            : 'Using shared Mail Wizard domain. Add a custom domain in Settings for better deliverability.'}
         </p>
       </div>
 
-      {/* Reply To */}
       <div>
         <label className="block text-sm font-medium mb-2">
           Reply-To Email <span className="text-gray-400">(Optional)</span>

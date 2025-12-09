@@ -254,10 +254,138 @@ const handleSendNow = async (campaign: Campaign) => {
 
   const handleOpenSendModal = (campaign: Campaign) => {
     setSelectedCampaign(campaign);
+
+    const storedRecipients = (campaign as any).content?.recipients;
+    if (storedRecipients) {
+      setSendMode(storedRecipients.sendToMode || "all");
+      setSelectedGroups(new Set(storedRecipients.selectedGroups || []));
+      setSelectedContacts(new Set(storedRecipients.selectedContacts || []));
+    } else {
+      setSendMode("all");
+      setSelectedContacts(new Set());
+      setSelectedGroups(new Set());
+    }
+
     setShowSendModal(true);
-    setSendMode("all");
-    setSelectedContacts(new Set());
-    setSelectedGroups(new Set());
+  };
+
+  const handleQuickSend = async (campaign: Campaign) => {
+    const storedRecipients = (campaign as any).content?.recipients;
+    if (!storedRecipients) {
+      handleOpenSendModal(campaign);
+      return;
+    }
+
+    setSelectedCampaign(campaign);
+
+    let recipientList: Contact[] = [];
+
+    if (storedRecipients.sendToMode === 'all') {
+      recipientList = contacts.filter((c) => c.status === "active");
+    } else if (storedRecipients.sendToMode === 'contacts') {
+      recipientList = contacts.filter(
+        (c) => storedRecipients.selectedContacts.includes(c.id) && c.status === "active"
+      );
+    } else if (storedRecipients.sendToMode === 'groups') {
+      const { data: groupMembers } = await supabase
+        .from("contact_group_members")
+        .select("contact_id")
+        .in("group_id", storedRecipients.selectedGroups);
+
+      if (groupMembers) {
+        const contactIds = groupMembers.map((gm) => gm.contact_id);
+        recipientList = contacts.filter(
+          (c) => contactIds.includes(c.id) && c.status === "active"
+        );
+      }
+    }
+
+    if (recipientList.length === 0) {
+      toast.error("No recipients found for this campaign");
+      return;
+    }
+
+    const confirmMessage = `Send "${campaign.name}" immediately to ${recipientList.length} recipient(s)?\n\nThis action cannot be undone.`;
+    if (!confirm(confirmMessage)) return;
+
+    const campaignHtml = (campaign as any).custom_html || (campaign as any).content?.html;
+
+    if (!campaign.subject?.trim()) {
+      toast.error("Campaign subject is missing");
+      return;
+    }
+
+    if (!campaignHtml?.trim()) {
+      toast.error("Campaign content is missing");
+      return;
+    }
+
+    setSending(campaign.id);
+    const toastId = toast.loading(`Sending to ${recipientList.length} recipient(s)...`);
+
+    try {
+      let successCount = 0;
+      let failedCount = 0;
+
+      for (const recipient of recipientList) {
+        if (!recipient.email?.trim()) {
+          failedCount++;
+          continue;
+        }
+
+        try {
+          const payload = {
+            to: recipient.email.trim(),
+            subject: campaign.subject.trim(),
+            html: campaignHtml.trim(),
+            from_email: (campaign as any).from_email || user?.email || "noreply@mailwizard.com",
+            from_name: (campaign as any).from_name || user?.user_metadata?.full_name || "Mail Wizard",
+            reply_to: (campaign as any).reply_to || user?.email,
+            campaign_id: campaign.id,
+            contact_id: recipient.id,
+            personalization: {
+              first_name: recipient.first_name || "",
+              last_name: recipient.last_name || "",
+            },
+          };
+
+          const { error } = await supabase.functions.invoke("send-email", {
+            body: payload
+          });
+
+          if (error) {
+            failedCount++;
+          } else {
+            successCount++;
+          }
+        } catch {
+          failedCount++;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      await supabase
+        .from('campaigns')
+        .update({ status: 'sent', sent_at: new Date().toISOString() })
+        .eq('id', campaign.id);
+
+      if (successCount > 0) {
+        if (failedCount === 0) {
+          toast.success(`Campaign sent to ${successCount} recipient(s)!`, { id: toastId });
+        } else {
+          toast.success(`Sent to ${successCount}. ${failedCount} failed.`, { id: toastId });
+        }
+      } else {
+        toast.error(`Failed to send campaign.`, { id: toastId });
+      }
+
+      fetchCampaigns();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to send campaign", { id: toastId });
+    } finally {
+      setSending(null);
+    }
   };
 
   const handleToggleGroup = (groupId: string) => {
@@ -441,9 +569,10 @@ const handleSendNow = async (campaign: Campaign) => {
         const payload = {
           to: recipient.email.trim(),
           subject: selectedCampaign.subject.trim(),
-          html: campaignHtml.trim(), // ✅ Use the HTML from either location
-          from_email: user?.email || "noreply@mailwizard.com",
-          from_name: user?.user_metadata?.full_name || "Email Wizard",
+          html: campaignHtml.trim(),
+          from_email: (selectedCampaign as any).from_email || user?.email || "noreply@mailwizard.com",
+          from_name: (selectedCampaign as any).from_name || user?.user_metadata?.full_name || "Mail Wizard",
+          reply_to: (selectedCampaign as any).reply_to || user?.email,
           campaign_id: selectedCampaign.id,
           contact_id: recipient.id,
           personalization: {
@@ -464,7 +593,7 @@ const handleSendNow = async (campaign: Campaign) => {
           console.error(`Failed to send to ${recipient.email}:`, error);
         } else {
           successCount++;
-          console.log(`✓ Sent to ${recipient.email}`);
+          console.log(`Sent to ${recipient.email}`);
         }
       } catch (error: any) {
         failedCount++;
@@ -476,7 +605,11 @@ const handleSendNow = async (campaign: Campaign) => {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    // Show results
+    await supabase
+      .from('campaigns')
+      .update({ status: 'sent', sent_at: new Date().toISOString() })
+      .eq('id', selectedCampaign.id);
+
     if (successCount > 0) {
       if (failedCount === 0) {
         toast.success(`Campaign sent to ${successCount} recipient(s)!`, {
@@ -496,7 +629,7 @@ const handleSendNow = async (campaign: Campaign) => {
       console.error("All sends failed:", errors);
     }
 
-    fetchCampaigns(); // Refresh to show updated status
+    fetchCampaigns();
   } catch (error: any) {
     console.error("Error sending campaign:", error);
     toast.error(error.message || "Failed to send campaign", { id: toastId });
@@ -525,7 +658,14 @@ const handleSendNow = async (campaign: Campaign) => {
       };
     }
 
-    // draft
+    if (campaign.status === "sending") {
+      return {
+        icon: <Play size={14} />,
+        text: "Sending",
+        className: "bg-yellow-100 text-yellow-800 border-yellow-200",
+      };
+    }
+
     return {
       icon: <AlertCircle size={14} />,
       text: "Draft",
@@ -715,18 +855,46 @@ const handleSendNow = async (campaign: Campaign) => {
                         {new Date(campaign.created_at).toLocaleDateString()}
                       </div>
 
-                      {/* DRAFT STATUS - Original Send Button */}
+                      {/* DRAFT STATUS - Edit, Delete, Send Buttons */}
                       {campaign.status === "draft" && (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          icon={Send}
-                          onClick={() => handleOpenSendModal(campaign)}
-                          loading={sending === campaign.id}
-                          disabled={sending !== null}
-                        >
-                          Send Campaign
-                        </Button>
+                        <div className="flex flex-col gap-2">
+                          <div className="text-sm text-gray-500 mb-1">
+                            {(campaign as any).content?.recipients
+                              ? `Recipients: ${campaign.recipients_count || 0}`
+                              : 'No recipients selected'}
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              icon={Edit2}
+                              onClick={() => handleEdit(campaign)}
+                              className="flex-1"
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              icon={Trash2}
+                              onClick={() => setDeletingCampaign(campaign)}
+                              className="border-red-500 text-red-600 hover:bg-red-50"
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            icon={Send}
+                            onClick={() => handleQuickSend(campaign)}
+                            loading={sending === campaign.id}
+                            disabled={sending !== null}
+                            className="w-full"
+                          >
+                            Send Campaign
+                          </Button>
+                        </div>
                       )}
 
                       {/* SCHEDULED STATUS - Edit, Delete, Send Now Buttons */}
@@ -776,6 +944,19 @@ const handleSendNow = async (campaign: Campaign) => {
                                 <span className="whitespace-nowrap">Send Now</span>
                               </div>
                             </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SENDING STATUS - In Progress */}
+                      {campaign.status === "sending" && (
+                        <div className="flex flex-col gap-2 items-end">
+                          <div className="text-sm text-yellow-600 font-medium flex items-center gap-2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
+                            Sending in progress...
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Please wait while emails are being sent
                           </div>
                         </div>
                       )}
