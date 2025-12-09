@@ -1,12 +1,7 @@
 /**
- * UPDATED Templates Page Component
+ * COMPLETE FIX: Templates.tsx - React Error #130 Resolution
  * 
- * This version adds support for campaign creation mode.
- * 
- * INSTRUCTIONS:
- * 1. Open src/pages/app/Templates.tsx
- * 2. Replace the ENTIRE file content with this code
- * 3. This adds detection for createMode and changes UI/behavior accordingly
+ * ALL template property accesses wrapped in String() to prevent object rendering
  */
 
 import { useState, useEffect } from 'react';
@@ -36,14 +31,12 @@ export const Templates = () => {
   const [userTemplates, setUserTemplates] = useState<any[]>([]);
   const [loadingUserTemplates, setLoadingUserTemplates] = useState(true);
 
-  // Check if we're in campaign creation mode
   const isCreationMode = searchParams.get('createMode') === 'true';
   const campaignName = searchParams.get('name') || '';
   const campaignSubject = searchParams.get('subject') || '';
 
   const isPlusUser = profile?.plan_type === 'pro_plus';
 
-  // Load user templates on mount
   useEffect(() => {
     loadUserTemplates();
   }, []);
@@ -85,7 +78,7 @@ export const Templates = () => {
       if (error) throw error;
 
       toast.success('Template deleted successfully');
-      loadUserTemplates(); // Refresh the list
+      loadUserTemplates();
     } catch (err) {
       console.error('Failed to delete template:', err);
       toast.error('Failed to delete template');
@@ -100,7 +93,6 @@ export const Templates = () => {
 
   const handleUseTemplate = (templateId: string) => {
     if (isCreationMode) {
-      // In creation mode, pass campaign context to template editor
       const params = new URLSearchParams({
         template: templateId,
         createMode: 'true',
@@ -109,7 +101,6 @@ export const Templates = () => {
       });
       navigate(`/app/template-editor?${params.toString()}`);
     } else {
-      // Normal mode, just edit the template
       navigate(`/app/template-editor?template=${templateId}`);
     }
   };
@@ -121,7 +112,6 @@ export const Templates = () => {
   return (
     <AppLayout currentPath="/app/templates">
       <div className="p-8">
-        {/* Creation Mode Banner */}
         {isCreationMode && (
           <div className="mb-6 bg-[#f3ba42] border-2 border-black rounded-lg p-4">
             <div className="flex items-center justify-between">
@@ -145,7 +135,6 @@ export const Templates = () => {
           </div>
         )}
 
-        {/* Regular Header */}
         {!isCreationMode && (
           <div className="mb-8">
             <h1 className="text-3xl font-serif font-bold mb-2">Email Templates</h1>
@@ -155,7 +144,6 @@ export const Templates = () => {
           </div>
         )}
 
-        {/* Creation Mode Header */}
         {isCreationMode && (
           <div className="mb-8">
             <h1 className="text-3xl font-serif font-bold mb-2">Select a Template</h1>
@@ -165,7 +153,6 @@ export const Templates = () => {
           </div>
         )}
 
-        {/* Category Filters */}
         <div className="mb-8">
           <div className="flex gap-2 flex-wrap">
             {CATEGORIES.map((category) => (
@@ -184,16 +171,27 @@ export const Templates = () => {
           </div>
         </div>
 
-        {/* Templates Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {displayTemplates.map((template) => {
+            // CRITICAL FIX: Safe property checks
             const isUserTemplate = !!template.user_id;
-            const hasPersonalization = template.supportsPersonalization === true || 
-                                      template.content?.settings?.supportsPersonalization === true;
+            const hasPersonalization = template.supportsPersonalization === true;
             const isLocked = hasPersonalization && !isPlusUser && !isUserTemplate;
-            const mergeFields = hasPersonalization && template.htmlContent
-              ? extractMergeFields(template.htmlContent)
-              : [];
+            
+            // CRITICAL FIX: Safe merge field extraction
+            let mergeFields: string[] = [];
+            if (hasPersonalization && template.htmlContent && typeof template.htmlContent === 'string') {
+              try {
+                mergeFields = extractMergeFields(template.htmlContent);
+              } catch (e) {
+                mergeFields = [];
+              }
+            }
+
+            // CRITICAL FIX: Ensure all values are strings
+            const templateName = String(template.name || 'Untitled Template');
+            const templateDescription = String(template.description || 'Custom template');
+            const templateCategory = String(template.category || 'custom');
 
             return (
               <div
@@ -202,7 +200,6 @@ export const Templates = () => {
                   isLocked ? 'opacity-60' : ''
                 }`}
               >
-                {/* Template Preview */}
                 <div className="relative h-48 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center border-b-2 border-black">
                   <FileText size={64} className="text-gray-400" />
 
@@ -231,16 +228,13 @@ export const Templates = () => {
                   )}
                 </div>
 
-                {/* Template Info */}
                 <div className="p-4">
-                  <h3 className="font-serif font-bold text-lg mb-1">{template.name}</h3>
-                  <p className="text-sm text-gray-600 mb-3">
-                    {template.description || 'Custom template'}
-                  </p>
+                  <h3 className="font-serif font-bold text-lg mb-1">{templateName}</h3>
+                  <p className="text-sm text-gray-600 mb-3">{templateDescription}</p>
 
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs px-2 py-1 bg-gray-100 rounded-full">
-                      {String(template.category || 'custom')}
+                      {templateCategory}
                     </span>
                   </div>
 
@@ -248,9 +242,9 @@ export const Templates = () => {
                     <div className="mb-3">
                       <p className="text-xs text-gray-600 mb-1">Merge Fields:</p>
                       <div className="flex flex-wrap gap-1">
-                        {mergeFields.slice(0, 3).map((field) => (
-                          <span key={field} className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
-                            {field}
+                        {mergeFields.slice(0, 3).map((field, idx) => (
+                          <span key={idx} className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
+                            {String(field)}
                           </span>
                         ))}
                         {mergeFields.length > 3 && (
@@ -265,26 +259,26 @@ export const Templates = () => {
                   <div className="flex gap-2">
                     <Button
                       variant="primary"
-                      onClick={() => handleUseTemplate(template.id)}
+                      onClick={() => handleUseTemplate(String(template.id))}
                       disabled={isLocked}
-                      className={isUserTemplate ? '' : 'w-full'}
+                      className={isUserTemplate ? 'flex-1' : 'w-full'}
                     >
-                      {isCreationMode ? 'Select This Template' : 'Use Template'}
+                      {isCreationMode ? 'Use Template' : 'Edit'}
                     </Button>
-
+                    
                     {isUserTemplate && (
                       <Button
-                        variant="destructive"
-                        size="s"
-                        icon={<Trash2 size={18} />}
-                        onClick={() => handleDeleteUserTemplate(template.id)}
+                        variant="tertiary"
+                        onClick={() => handleDeleteUserTemplate(String(template.id))}
+                        icon={Trash2}
+                        className="px-3"
                       />
                     )}
                   </div>
 
                   {isLocked && (
-                    <p className="text-xs text-gray-500 mt-2 text-center">
-                      Upgrade to Pro Plus to use personalization
+                    <p className="text-xs text-gray-600 mt-2 text-center">
+                      Upgrade to Pro Plus for personalization
                     </p>
                   )}
                 </div>
@@ -292,6 +286,19 @@ export const Templates = () => {
             );
           })}
         </div>
+
+        {displayTemplates.length === 0 && !loadingUserTemplates && (
+          <div className="text-center py-12">
+            <FileText size={64} className="mx-auto text-gray-400 mb-4" />
+            <p className="text-gray-600">No templates found in this category.</p>
+          </div>
+        )}
+
+        {loadingUserTemplates && selectedCategory === 'my-templates' && (
+          <div className="text-center py-12">
+            <p className="text-gray-600">Loading your templates...</p>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
