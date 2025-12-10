@@ -157,6 +157,10 @@ export default function CreateCampaignModal({
 
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
+  
+  // Template fetching state
+  const [allTemplates, setAllTemplates] = useState<any[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
 
   // ============================================================================
   // DATA LOADING
@@ -194,6 +198,37 @@ export default function CreateCampaignModal({
       setCurrentStep(1);
     }
   }, [shouldLoadTemplate, location.state]);
+  
+  // Fetch all templates (system + user custom)
+  useEffect(() => {
+    async function fetchAllTemplates() {
+      try {
+        setLoadingTemplates(true);
+        const templates = [...EMAIL_TEMPLATES];
+        
+        if (user) {
+          const { data, error } = await supabase
+            .from('templates')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false });
+          
+          if (error) throw error;
+          if (data) templates.push(...data);
+        }
+        
+        console.log('✅ Loaded templates for campaign:', templates.length);
+        setAllTemplates(templates);
+      } catch (error: any) {
+        console.error('❌ Failed to fetch templates:', error);
+        toast.error('Failed to load templates');
+      } finally {
+        setLoadingTemplates(false);
+      }
+    }
+    
+    fetchAllTemplates();
+  }, [user]);
 
   async function loadContactsAndGroups() {
     try {
@@ -757,6 +792,8 @@ onClose();
               errors={errors}
               updateField={updateField}
               userPlan={profile?.plan_type || 'free'}
+              allTemplates={allTemplates}
+              loadingTemplates={loadingTemplates}
             />
           )}
 
@@ -1029,8 +1066,8 @@ function Step2TemplateSelection({
   ];
 
   const filteredTemplates = selectedCategory === 'all'
-    ? EMAIL_TEMPLATES
-    : EMAIL_TEMPLATES.filter(t => t.category === selectedCategory);
+    ? allTemplates
+    : allTemplates.filter(t => t.category === selectedCategory);
 
   const isPlusUser = userPlan === 'pro_plus';
 
@@ -1145,6 +1182,11 @@ function Step2TemplateSelection({
           </div>
 
           {/* Template Grid */}
+          {loadingTemplates ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 size={32} className="animate-spin text-purple" />
+            </div>
+          ) : (
           <div className="grid grid-cols-2 gap-4 max-h-96 overflow-y-auto">
             {filteredTemplates.map((template) => {
               const hasPersonalization = template.supportsPersonalization;
