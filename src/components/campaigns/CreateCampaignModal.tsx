@@ -157,6 +157,8 @@ export default function CreateCampaignModal({
 
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [allTemplates, setAllTemplates] = useState<any[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
 
   // ============================================================================
   // DATA LOADING
@@ -165,6 +167,45 @@ export default function CreateCampaignModal({
   useEffect(() => {
     loadContactsAndGroups();
   }, []);
+
+  useEffect(() => {
+  async function fetchAllTemplates() {
+    try {
+      setLoadingTemplates(true);
+      
+      // Start with system templates
+      const templates = [...EMAIL_TEMPLATES];
+      
+      // Fetch user's custom templates
+      if (user) {
+        const { data, error } = await supabase
+          .from('templates')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (data) {
+          // Add user templates to the list
+          templates.push(...data);
+        }
+      }
+      
+      console.log('✅ Loaded templates for campaign:', templates.length);
+      setAllTemplates(templates);
+    } catch (error: any) {
+      console.error('❌ Failed to fetch templates:', error);
+      toast.error('Failed to load templates');
+    } finally {
+      setLoadingTemplates(false);
+    }
+  }
+  
+  if (isOpen) {
+    fetchAllTemplates();
+  }
+}, [isOpen, user]);
 
   // Handle return from template editor
   useEffect(() => {
@@ -1028,9 +1069,10 @@ function Step2TemplateSelection({
     { id: 'announcement', name: 'Announcement' },
   ];
 
-  const filteredTemplates = selectedCategory === 'all'
-    ? EMAIL_TEMPLATES
-    : EMAIL_TEMPLATES.filter(t => t.category === selectedCategory);
+  const filteredTemplates = allTemplates.filter((template) => {
+  if (selectedCategory === 'all') return true;
+  return template.category === selectedCategory;
+});
 
   const isPlusUser = userPlan === 'pro_plus';
 

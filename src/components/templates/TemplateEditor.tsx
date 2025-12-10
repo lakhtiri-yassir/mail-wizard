@@ -258,7 +258,7 @@ export default function TemplateEditor({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col">
-      {/* Elegant Header with Glassmorphism */}
+      {/* Header */}
       <div className="backdrop-blur-xl bg-white/80 border-b border-gray-200/50 shadow-lg px-8 py-6 flex-shrink-0 sticky top-0 z-10">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -288,23 +288,21 @@ export default function TemplateEditor({
               </Button>
             )}
 
-            <Button
-              variant="primary"
+            <button
               onClick={handleSaveTemplate}
-              loading={savingTemplate}
               disabled={savingTemplate}
-              className="bg-gradient-to-r from-purple to-gold hover:shadow-xl transition-all"
+              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple to-gold text-white font-semibold rounded-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save size={18} />
               {savingTemplate ? 'Saving...' : mode === 'edit' ? 'Update Template' : 'Save Template'}
-            </Button>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Main Content - Elegant Split Layout */}
+      {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Side - Editor with Card Design */}
+        {/* Left Side - Editor */}
         <div className="flex-1 flex flex-col overflow-hidden p-6">
           {/* Settings Card */}
           <div className="bg-white rounded-2xl shadow-lg border border-gray-200/50 mb-6 overflow-hidden">
@@ -332,7 +330,6 @@ export default function TemplateEditor({
             {settingsExpanded && (
               <div className="px-6 pb-6 pt-2 bg-gradient-to-br from-gray-50/50 to-transparent">
                 <div className="grid grid-cols-2 gap-4">
-                  {/* Template Info Section */}
                   <div className="col-span-2 mb-2">
                     <div className="flex items-center gap-2 mb-3">
                       <Layout size={16} className="text-purple" />
@@ -364,7 +361,6 @@ export default function TemplateEditor({
                     />
                   </div>
 
-                  {/* Brand Section */}
                   <div className="col-span-2 mb-2 mt-4">
                     <div className="flex items-center gap-2 mb-3">
                       <Sparkles size={16} className="text-gold" />
@@ -385,7 +381,6 @@ export default function TemplateEditor({
                     className="bg-white"
                   />
 
-                  {/* Color Section */}
                   <div className="col-span-2 mb-2 mt-4">
                     <div className="flex items-center gap-2 mb-3">
                       <Palette size={16} className="text-purple" />
@@ -460,7 +455,7 @@ export default function TemplateEditor({
                 </div>
                 <div>
                   <h3 className="font-bold text-lg">Email Content</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Drag and drop sections to build your email</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Drag sections by the handle to reorder</p>
                 </div>
               </div>
             </div>
@@ -472,7 +467,7 @@ export default function TemplateEditor({
           </div>
         </div>
 
-        {/* Right Side - Live Preview with Device Frame */}
+        {/* Right Side - Live Preview */}
         <div className="w-[520px] flex-shrink-0 p-6 pl-0">
           <div className="h-full bg-gradient-to-br from-gray-900 via-purple/5 to-gray-900 rounded-2xl shadow-2xl border border-gray-800 flex flex-col overflow-hidden">
             <div className="bg-gradient-to-r from-purple to-gold px-6 py-4 flex items-center gap-3">
