@@ -535,17 +535,143 @@ export default function CreateCampaignModal({
 
       if (updateError) throw updateError;
 
-      // ✅ UPDATED: Show appropriate success message
-      toast.success(
-        formData.scheduleMode === 'now' 
-          ? 'Campaign created and ready to send!' 
-          : formData.scheduleMode === 'later'
-          ? 'Campaign scheduled successfully!'
-          : 'Campaign saved as draft!'
+      // ✅ FIX: Actually send emails when "Send Now" is selected
+if (formData.scheduleMode === 'now') {
+  console.log('📧 Send Now selected - starting email sending...');
+  
+  // Show loading toast
+  const sendToastId = toast.loading('Campaign created! Sending emails...');
+  
+  try {
+    // Build recipient list
+    let recipientList: Contact[] = [];
+    
+    if (formData.sendToMode === 'all') {
+      recipientList = contacts.filter((c) => c.status === "active");
+    } else if (formData.sendToMode === 'contacts') {
+      const selectedIds = Array.from(formData.selectedContacts);
+      recipientList = contacts.filter(
+        (c) => selectedIds.includes(c.id) && c.status === "active"
       );
+    } else if (formData.sendToMode === 'groups') {
+      const groupIds = Array.from(formData.selectedGroups);
+      const { data: groupMembers } = await supabase
+        .from("contact_group_members")
+        .select("contact_id")
+        .in("group_id", groupIds);
 
-      onSuccess(campaign);
-      onClose();
+      if (groupMembers) {
+        const contactIds = groupMembers.map((gm) => gm.contact_id);
+        recipientList = contacts.filter(
+          (c) => contactIds.includes(c.id) && c.status === "active"
+        );
+      }
+    }
+
+    console.log(`📊 Sending to ${recipientList.length} recipients`);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Extract sending domain ID
+    const sendingDomainId = campaignData.content?.sending_domain_id || null;
+
+    // Send to each recipient
+    for (let i = 0; i < recipientList.length; i++) {
+      const recipient = recipientList[i];
+      
+      try {
+        // Personalize HTML
+        const campaignHtml = formData.customHtml || '';
+        let personalizedHtml = campaignHtml
+          .replace(/\{\{MERGE:first_name\}\}/g, recipient.first_name || '')
+          .replace(/\{\{MERGE:last_name\}\}/g, recipient.last_name || '')
+          .replace(/\{\{MERGE:email\}\}/g, recipient.email || '')
+          .replace(/\{\{firstname\}\}/gi, recipient.first_name || '')
+          .replace(/\{\{lastname\}\}/gi, recipient.last_name || '')
+          .replace(/\{\{email\}\}/gi, recipient.email || '');
+
+        // Send email via edge function
+        const { error: sendError } = await supabase.functions.invoke(
+          "send-email",
+          {
+            body: {
+              to: recipient.email.trim(),
+              subject: formData.subject.trim(),
+              html: personalizedHtml.trim(),
+              from_name: formData.fromName.trim(),
+              reply_to: formData.replyTo.trim(),
+              sending_domain_id: sendingDomainId,
+              campaign_id: campaign.id,
+              contact_id: recipient.id,
+              personalization: {
+                first_name: recipient.first_name || "",
+                last_name: recipient.last_name || "",
+                email: recipient.email || "",
+              },
+            },
+          }
+        );
+
+        if (sendError) {
+          console.error(`❌ Failed to send to ${recipient.email}:`, sendError);
+          failCount++;
+        } else {
+          console.log(`✅ Sent to ${recipient.email}`);
+          successCount++;
+        }
+
+        // Update progress every 5 emails
+        if ((i + 1) % 5 === 0 || i === recipientList.length - 1) {
+          toast.loading(
+            `Sending... ${successCount + failCount}/${recipientList.length}`,
+            { id: sendToastId }
+          );
+        }
+
+      } catch (error) {
+        console.error(`❌ Error sending to ${recipient.email}:`, error);
+        failCount++;
+      }
+    }
+
+    // Update campaign to "sent" status
+    await supabase
+      .from("campaigns")
+      .update({
+        status: "sent",
+        sent_at: new Date().toISOString(),
+      })
+      .eq("id", campaign.id);
+
+    // Show final result
+    if (failCount === 0) {
+      toast.success(
+        `✅ Campaign sent to all ${successCount} recipients!`,
+        { id: sendToastId, duration: 5000 }
+      );
+    } else {
+      toast.success(
+        `⚠️ Sent to ${successCount} recipients, ${failCount} failed`,
+        { id: sendToastId, duration: 5000 }
+      );
+    }
+
+  } catch (error: any) {
+    console.error('❌ Error sending campaign:', error);
+    toast.error('Campaign created but failed to send: ' + error.message, { id: sendToastId });
+  }
+} else {
+  // For scheduled or draft campaigns, just show success message
+  toast.success(
+    formData.scheduleMode === 'later'
+      ? 'Campaign scheduled successfully!'
+      : 'Campaign saved as draft!'
+  );
+}
+
+onSuccess(campaign);
+onClose();
     } catch (error: any) {
       console.error('Failed to create campaign:', error);
       toast.error(error.message || 'Failed to create campaign');
