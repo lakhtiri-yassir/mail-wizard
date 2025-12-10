@@ -1,23 +1,8 @@
-/**
- * ============================================================================
- * Template Edit Page
- * ============================================================================
- * 
- * Purpose: Full-page template editor for existing templates
- * 
- * Features:
- * - Load existing template for editing
- * - Full drag-and-drop editor interface
- * - Save updates back to database
- * - Navigate back to templates list
- * 
- * ============================================================================
- */
-
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { EMAIL_TEMPLATES } from '../../data/emailTemplates';
 import TemplateEditor from '../../components/templates/TemplateEditor';
 import { Loader2, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -41,7 +26,18 @@ export default function TemplateEdit() {
       setLoading(true);
       setError(null);
 
-      console.log('📥 Loading template:', templateId);
+      // First, check if it's a system template
+      const systemTemplate = EMAIL_TEMPLATES.find((t) => t.id === templateId);
+      
+      if (systemTemplate) {
+        console.log('✅ Loaded system template:', systemTemplate.name);
+        setTemplate(systemTemplate);
+        setLoading(false);
+        return;
+      }
+
+      // If not a system template, load from database
+      console.log('📥 Loading template from database:', templateId);
 
       const { data, error: fetchError } = await supabase
         .from('templates')
@@ -88,7 +84,6 @@ export default function TemplateEdit() {
     }
   }
 
-  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -100,7 +95,6 @@ export default function TemplateEdit() {
     );
   }
 
-  // Error state
   if (error || !template) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -119,7 +113,6 @@ export default function TemplateEdit() {
     );
   }
 
-  // Main editor
   return (
     <TemplateEditor
       mode="edit"
