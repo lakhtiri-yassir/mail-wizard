@@ -87,7 +87,7 @@ function App() {
             <Route path="/app/contacts" element={<ProtectedRoute><Contacts /></ProtectedRoute>} />
             <Route path="/app/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />
             <Route path="/app/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
-            <Route path="/app/template-editor" element={<ProtectedRoute><TemplateEditor /></ProtectedRoute>} />
+            <Route path="/app/template/editor" element={<ProtectedRoute><TemplateEditor /></ProtectedRoute>} />
             <Route path="/app/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/app/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/app/settings/domains" element={<ProtectedRoute><Domains /></ProtectedRoute>} /> {/* ADD THIS ROUTE */}
