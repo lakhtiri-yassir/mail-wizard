@@ -299,6 +299,7 @@ const handleSendNow = async (campaign: Campaign) => {
 
   setSelectedCampaign(campaign);
 
+  // Step 1: Build recipient list
   let recipientList: Contact[] = [];
 
   if (storedRecipients.sendToMode === 'all') {
@@ -326,7 +327,20 @@ const handleSendNow = async (campaign: Campaign) => {
     return;
   }
 
-  // ✅ ENHANCED: Better confirmation message
+  // Step 2: Validate campaign content
+  const campaignHtml = (campaign as any).custom_html || (campaign as any).content?.html;
+
+  if (!campaign.subject?.trim()) {
+    toast.error("Campaign subject is missing");
+    return;
+  }
+
+  if (!campaignHtml?.trim()) {
+    toast.error("Campaign content is missing");
+    return;
+  }
+
+  // Step 3: Confirmation dialog
   const confirmMessage = 
     `📧 Send Campaign Confirmation\n\n` +
     `Campaign: "${campaign.name}"\n` +
@@ -337,86 +351,100 @@ const handleSendNow = async (campaign: Campaign) => {
   
   if (!confirm(confirmMessage)) return;
 
+  // Step 4: Start sending process
+  setSending(campaign.id);
+  const toastId = toast.loading(`Sending to ${recipientList.length} recipient${recipientList.length !== 1 ? 's' : ''}...`);
 
-    const campaignHtml = (campaign as any).custom_html || (campaign as any).content?.html;
+  try {
+    let successCount = 0;
+    let failCount = 0;
 
-    if (!campaign.subject?.trim()) {
-      toast.error("Campaign subject is missing");
-      return;
-    }
+    // Extract sending domain ID from campaign
+    const sendingDomainId = (campaign as any).content?.sending_domain_id || null;
 
-    if (!campaignHtml?.trim()) {
-      toast.error("Campaign content is missing");
-      return;
-    }
+    // Step 5: Send to each recipient
+    for (const recipient of recipientList) {
+      try {
+        // Personalize HTML content
+        let personalizedHtml = campaignHtml
+          .replace(/\{\{MERGE:first_name\}\}/g, recipient.first_name || '')
+          .replace(/\{\{MERGE:last_name\}\}/g, recipient.last_name || '')
+          .replace(/\{\{MERGE:email\}\}/g, recipient.email || '')
+          .replace(/\{\{firstname\}\}/gi, recipient.first_name || '')
+          .replace(/\{\{lastname\}\}/gi, recipient.last_name || '')
+          .replace(/\{\{email\}\}/gi, recipient.email || '');
 
-    setSending(campaign.id);
-    const toastId = toast.loading(`Sending to ${recipientList.length} recipient(s)...`);
-
-    try {
-      let successCount = 0;
-      let failedCount = 0;
-
-      for (const recipient of recipientList) {
-        if (!recipient.email?.trim()) {
-          failedCount++;
-          continue;
-        }
-
-        try {
-          const payload = {
-            to: recipient.email.trim(),
-            subject: campaign.subject.trim(),
-            html: campaignHtml.trim(),
-            from_email: (campaign as any).from_email || user?.email || "noreply@mailwizard.com",
-            from_name: (campaign as any).from_name || user?.user_metadata?.full_name || "Mail Wizard",
-            reply_to: (campaign as any).reply_to || user?.email,
-            campaign_id: campaign.id,
-            contact_id: recipient.id,
-            personalization: {
-              first_name: recipient.first_name || "",
-              last_name: recipient.last_name || "",
+        // Call send-email edge function
+        const { error: sendError } = await supabase.functions.invoke(
+          "send-email",
+          {
+            body: {
+              to: recipient.email.trim(),
+              subject: campaign.subject.trim(),
+              html: personalizedHtml.trim(),
+              from_name: campaign.from_name || user?.user_metadata?.full_name || "Mail Wizard",
+              reply_to: campaign.reply_to || user?.email,
+              sending_domain_id: sendingDomainId,
+              campaign_id: campaign.id,
+              contact_id: recipient.id,
+              personalization: {
+                first_name: recipient.first_name || "",
+                last_name: recipient.last_name || "",
+                email: recipient.email || "",
+              },
             },
-          };
-
-          const { error } = await supabase.functions.invoke("send-email", {
-            body: payload
-          });
-
-          if (error) {
-            failedCount++;
-          } else {
-            successCount++;
           }
-        } catch {
-          failedCount++;
-        }
+        );
 
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      await supabase
-        .from('campaigns')
-        .update({ status: 'sent', sent_at: new Date().toISOString() })
-        .eq('id', campaign.id);
-
-      if (successCount > 0) {
-        if (failedCount === 0) {
-          toast.success(`Campaign sent to ${successCount} recipient(s)!`, { id: toastId });
+        if (sendError) {
+          console.error(`Failed to send to ${recipient.email}:`, sendError);
+          failCount++;
         } else {
-          toast.success(`Sent to ${successCount}. ${failedCount} failed.`, { id: toastId });
+          successCount++;
         }
-      } else {
-        toast.error(`Failed to send campaign.`, { id: toastId });
-      }
 
-      fetchCampaigns();
-    } catch (error: any) {
-      toast.error(error.message || "Failed to send campaign", { id: toastId });
-    } finally {
-      setSending(null);
+        // Update progress toast
+        toast.loading(
+          `Sending... ${successCount + failCount}/${recipientList.length}`,
+          { id: toastId }
+        );
+
+      } catch (error) {
+        console.error(`Error sending to ${recipient.email}:`, error);
+        failCount++;
+      }
     }
-  };
+
+    // Step 6: Update campaign status
+    const { error: updateError } = await supabase
+      .from("campaigns")
+      .update({
+        status: "sent",
+        sent_at: new Date().toISOString(),
+        recipients_count: recipientList.length,
+      })
+      .eq("id", campaign.id);
+
+    if (updateError) {
+      console.error("Failed to update campaign status:", updateError);
+    }
+
+    // Step 7: Show final result
+    toast.success(
+      `Campaign sent! ${successCount} successful${failCount > 0 ? `, ${failCount} failed` : ''}`,
+      { id: toastId }
+    );
+
+    // Refresh campaigns list
+    fetchCampaigns();
+
+  } catch (error: any) {
+    console.error("Failed to send campaign:", error);
+    toast.error(error.message || "Failed to send campaign", { id: toastId });
+  } finally {
+    setSending(null);
+  }
+};
 
   const handleToggleGroup = (groupId: string) => {
     setSelectedGroups((prev) => {
