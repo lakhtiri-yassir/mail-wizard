@@ -8,9 +8,6 @@ import {
   Trash2,
   Loader2,
   Search,
-  Filter,
-  FileText,
-  RefreshCw,
   X,
   Copy,
 } from 'lucide-react';
@@ -20,7 +17,6 @@ import TemplateViewer from '../../components/templates/TemplateViewer';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { EMAIL_TEMPLATES } from '../../data/emailTemplates';
-import { migrateTemplatesToSections } from '../../utils/migrateTemplates';
 import toast from 'react-hot-toast';
 
 interface Template {
@@ -50,7 +46,6 @@ export default function Templates() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
   const [deletingTemplate, setDeletingTemplate] = useState<string | null>(null);
-  const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
     fetchTemplates();
@@ -124,10 +119,9 @@ export default function Templates() {
     }
   }
 
-  function handleUseInCampaign(template: Template) {
-    navigate('/app/campaigns/create', {
-      state: { selectedTemplate: template },
-    });
+  function handleUseTemplate(template: Template) {
+    // Navigate to editor with the template loaded
+    navigate(`/app/templates/edit/${template.id}`);
   }
 
   async function handleDuplicateTemplate(template: Template) {
@@ -137,12 +131,6 @@ export default function Templates() {
     }
 
     try {
-      console.log('🔄 Starting template duplication...', {
-        templateId: template.id,
-        templateName: template.name,
-        userId: user.id,
-      });
-
       const { data, error } = await supabase
         .from('templates')
         .insert({
@@ -157,32 +145,14 @@ export default function Templates() {
         .select()
         .single();
 
-      if (error) {
-        console.error('❌ Supabase error details:', {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint,
-        });
-        throw error;
-      }
+      if (error) throw error;
 
-      console.log('✅ Template duplicated successfully:', data.id);
       toast.success('Template duplicated successfully!');
       fetchTemplates();
       navigate(`/app/templates/edit/${data.id}`);
     } catch (error: any) {
-      console.error('❌ Failed to duplicate template:', error);
-      
-      if (error.code === '42501') {
-        toast.error('Permission denied. Please try refreshing the page and logging in again.');
-      } else if (error.message?.toLowerCase().includes('policy')) {
-        toast.error('Database permission error. The RLS policy may need to be updated.');
-      } else if (error.message?.toLowerCase().includes('violates')) {
-        toast.error('Data validation error. Please contact support.');
-      } else {
-        toast.error(`Failed to duplicate template: ${error.message || 'Unknown error'}`);
-      }
+      console.error('Failed to duplicate template:', error);
+      toast.error('Failed to duplicate template');
     }
   }
 
@@ -216,42 +186,6 @@ export default function Templates() {
     }
   }
 
-  async function handleMigrateTemplates() {
-    if (!confirm(
-      'Migrate all templates to the new section-based format?\n\n' +
-      'This will update templates to use the drag-and-drop editor. ' +
-      'Original HTML will be preserved for backward compatibility.'
-    )) {
-      return;
-    }
-
-    try {
-      setMigrating(true);
-      toast.loading('Migrating templates...', { id: 'migration' });
-
-      const result = await migrateTemplatesToSections();
-
-      if (result.success) {
-        toast.success(
-          `✅ Migration complete! ${result.migratedCount} templates updated, ${result.skippedCount} already migrated.`,
-          { id: 'migration', duration: 5000 }
-        );
-      } else {
-        toast.error(
-          `⚠️ Migration completed with errors. ${result.migratedCount} updated, ${result.errorCount} failed.`,
-          { id: 'migration', duration: 5000 }
-        );
-      }
-
-      fetchTemplates();
-    } catch (error: any) {
-      console.error('Migration failed:', error);
-      toast.error('Migration failed', { id: 'migration' });
-    } finally {
-      setMigrating(false);
-    }
-  }
-
   return (
     <AppLayout>
       <div className="p-8">
@@ -263,20 +197,9 @@ export default function Templates() {
             </p>
           </div>
 
-          <div className="flex gap-3">
-            <Button
-              variant="secondary"
-              icon={RefreshCw}
-              onClick={handleMigrateTemplates}
-              loading={migrating}
-              disabled={migrating}
-            >
-              Migrate Templates
-            </Button>
-            <Button variant="primary" icon={Plus} onClick={handleCreateNew}>
-              Create Template
-            </Button>
-          </div>
+          <Button variant="primary" icon={Plus} onClick={handleCreateNew}>
+            Create Template
+          </Button>
         </div>
 
         <div className="flex gap-4 mb-6">
@@ -317,21 +240,6 @@ export default function Templates() {
           </div>
         )}
 
-        {!loading && filteredTemplates.length === 0 && (
-          <div className="text-center py-20">
-            <FileText size={64} className="mx-auto text-gray-300 mb-4" />
-            <h3 className="text-xl font-bold mb-2">No templates found</h3>
-            <p className="text-gray-600 mb-6">
-              {searchQuery || selectedCategory !== 'all'
-                ? 'Try adjusting your search or filters'
-                : 'Get started by creating your first template'}
-            </p>
-            <Button variant="primary" icon={Plus} onClick={handleCreateNew}>
-              Create Template
-            </Button>
-          </div>
-        )}
-
         {!loading && filteredTemplates.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredTemplates.map((template) => (
@@ -340,7 +248,7 @@ export default function Templates() {
                 template={template}
                 onPreview={() => handlePreviewTemplate(template)}
                 onEdit={() => handleEditTemplate(template)}
-                onUse={() => handleUseInCampaign(template)}
+                onUse={() => handleUseTemplate(template)}
                 onDelete={() => handleDeleteTemplate(template)}
                 onDuplicate={() => handleDuplicateTemplate(template)}
                 isDeleting={deletingTemplate === template.id}
@@ -372,7 +280,7 @@ export default function Templates() {
                 }}
                 onUseInCampaign={() => {
                   setShowPreviewModal(false);
-                  handleUseInCampaign(previewTemplate);
+                  handleUseTemplate(previewTemplate);
                 }}
                 onDelete={
                   !previewTemplate.is_locked

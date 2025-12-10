@@ -972,24 +972,6 @@ const handleSendNow = async (campaign: Campaign) => {
                               ? `Recipients: ${campaign.recipients_count || 0}`
                               : 'No recipients selected'}
                           </div>
-                          <div className="text-sm mb-2">
-      {(campaign as any).content?.recipients ? (
-        <div className="flex items-center gap-1 text-gray-600">
-          <Users size={14} className="text-purple" />
-          <span className="font-medium">
-            {campaign.recipients_count} recipient{campaign.recipients_count !== 1 ? 's' : ''}
-          </span>
-          <span className="text-gray-500">
-            ({(campaign as any).content.recipients.sendToMode})
-          </span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1 text-yellow-600">
-          <AlertCircle size={14} />
-          <span className="text-xs">Recipients not configured</span>
-        </div>
-      )}
-    </div>
                           <div className="flex gap-2">
                             <Button
                               variant="secondary"
@@ -1033,32 +1015,6 @@ const handleSendNow = async (campaign: Campaign) => {
                               <>📅 {new Date(campaign.scheduled_at).toLocaleString()}</>
                             )}
                           </div>
-                          <div className="text-sm mb-2">
-      <div className="flex items-center gap-1 text-purple font-medium mb-1">
-        <Clock size={14} />
-        <span>Scheduled for:</span>
-      </div>
-      {campaign.scheduled_at && (
-        <div className="text-sm text-gray-700 ml-5">
-          <div className="font-semibold">
-            {new Date(campaign.scheduled_at).toLocaleDateString('en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric'
-            })}
-          </div>
-          <div className="text-purple font-medium">
-            {new Date(campaign.scheduled_at).toLocaleTimeString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-                          
                           {/* Action Buttons */}
                           <div className="flex gap-2">
                             {/* Edit Button */}
