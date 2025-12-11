@@ -9,6 +9,8 @@ import {
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { Logo } from '../ui/Logo';
+import { useNavigate } from 'react-router-dom';
 
 const navigation = [
   { name: 'Dashboard', icon: LayoutDashboard, href: '/app' },
@@ -25,6 +27,7 @@ interface SidebarProps {
 
 export const Sidebar = ({ currentPath }: SidebarProps) => {
   const { profile, signOut } = useAuth();
+  const navigate = useNavigate();
 
   const handleSignOut = async () => {
     try {
@@ -47,11 +50,18 @@ export const Sidebar = ({ currentPath }: SidebarProps) => {
 
   return (
     <div className="w-64 bg-white border-r border-black h-screen flex flex-col">
+      {/* 🔥 UPDATED: Logo Section */}
       <div className="p-6 border-b border-black">
-        <div className="flex items-center gap-2 mb-4">
-          <Mail className="w-8 h-8 text-gold" />
-          <span className="text-xl font-serif font-bold">Email Wizard</span>
+        {/* Logo - Clickable, navigates to dashboard */}
+        <div className="mb-4">
+          <Logo 
+            variant="full" 
+            size="md"
+            onClick={() => navigate('/app')}
+          />
         </div>
+
+        {/* User Profile Info */}
         {profile && (
           <div className="space-y-2">
             <p className="text-sm font-semibold truncate">{profile.full_name || profile.email}</p>
@@ -67,6 +77,7 @@ export const Sidebar = ({ currentPath }: SidebarProps) => {
         )}
       </div>
 
+      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-4">
         <ul className="space-y-1">
           {navigation.map((item) => {
@@ -98,6 +109,7 @@ export const Sidebar = ({ currentPath }: SidebarProps) => {
         </ul>
       </nav>
 
+      {/* Footer - Admin & Sign Out */}
       <div className="p-4 border-t border-black">
         {profile?.is_admin && (
           <a
