@@ -175,6 +175,43 @@ export const Contacts = () => {
     }
   };
 
+  // 🔥 NEW: Delete group function
+  const handleDeleteGroup = async (groupId: string) => {
+    const group = groups.find(g => g.id === groupId);
+    
+    if (!group) return;
+    
+    const confirmMessage = group.contact_count > 0
+      ? `Delete "${group.name}"? This will remove ${group.contact_count} contact(s) from this group. The contacts themselves will NOT be deleted.`
+      : `Delete "${group.name}"?`;
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('contact_groups')
+        .delete()
+        .eq('id', groupId);
+
+      if (error) throw error;
+
+      toast.success('Group deleted successfully');
+      
+      // If deleted group was selected, switch to All Contacts
+      if (selectedGroupId === groupId) {
+        setSelectedGroupId(null);
+        fetchContacts();
+      }
+      
+      fetchGroups();
+    } catch (error: any) {
+      console.error('Error deleting group:', error);
+      toast.error('Failed to delete group');
+    }
+  };
+
   const handleContactCheckbox = (contactId: string) => {
     const newSelected = new Set(selectedContacts);
     if (newSelected.has(contactId)) {
@@ -241,26 +278,44 @@ export const Contacts = () => {
               </div>
             </button>
 
-            {/* Groups */}
+            {/* Groups - 🔥 MODIFIED: Added delete button */}
             {groups.map((group) => (
-              <button
+              <div
                 key={group.id}
-                onClick={() => setSelectedGroupId(group.id)}
-                className={`w-full text-left px-4 py-3 rounded-lg border transition-all duration-200 ${
+                className={`w-full rounded-lg border transition-all duration-200 group relative ${
                   selectedGroupId === group.id
-                    ? 'bg-[#f3ba42] border-black font-semibold'
+                    ? 'bg-[#f3ba42] border-black'
                     : 'bg-white border-gray-200 hover:border-black'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <span>{group.name}</span>
-                  <span className={`text-sm ${
-                    selectedGroupId === group.id ? 'text-black' : 'text-gray-500'
-                  }`}>
-                    {group.contact_count}
-                  </span>
-                </div>
-              </button>
+                <button
+                  onClick={() => setSelectedGroupId(group.id)}
+                  className="w-full text-left px-4 py-3 pr-12"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={selectedGroupId === group.id ? 'font-semibold' : ''}>
+                      {group.name}
+                    </span>
+                    <span className={`text-sm ${
+                      selectedGroupId === group.id ? 'text-black' : 'text-gray-500'
+                    }`}>
+                      {group.contact_count}
+                    </span>
+                  </div>
+                </button>
+                
+                {/* Delete button - shows on hover */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteGroup(group.id);
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 transition-all"
+                  title="Delete group"
+                >
+                  <Trash2 size={14} className="text-red-600" />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -376,78 +431,81 @@ export const Contacts = () => {
                 )}
               </div>
             ) : (
+              /* 🔥 MODIFIED: Added horizontal scroll wrapper */
               <div className="bg-white border border-black rounded-lg overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 py-3 text-left">
-                        <input
-                          type="checkbox"
-                          checked={selectedContacts.size === filteredContacts.length && filteredContacts.length > 0}
-                          onChange={handleSelectAll}
-                          className="w-4 h-4 rounded border-black"
-                        />
-                      </th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold">Name</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold">Email</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold">Company</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold">Role</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold">Industry</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold">Status</th>
-                      <th className="px-4 py-3 text-right text-sm font-semibold">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {filteredContacts.map((contact) => (
-                      <tr key={contact.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1000px]">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left">
                           <input
                             type="checkbox"
-                            checked={selectedContacts.has(contact.id)}
-                            onChange={() => handleContactCheckbox(contact.id)}
+                            checked={selectedContacts.size === filteredContacts.length && filteredContacts.length > 0}
+                            onChange={handleSelectAll}
                             className="w-4 h-4 rounded border-black"
                           />
-                        </td>
-                        <td className="px-4 py-3 font-medium">
-                          {contact.first_name || contact.last_name
-                            ? `${contact.first_name || ''} ${contact.last_name || ''}`.trim()
-                            : '-'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-600">{contact.email}</td>
-                        <td className="px-4 py-3 text-gray-600">{contact.company || '-'}</td>
-                        <td className="px-4 py-3 text-gray-600">{contact.role || '-'}</td>
-                        <td className="px-4 py-3 text-gray-600">{contact.industry || '-'}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-block px-2 py-1 text-xs rounded-full ${
-                            contact.status === 'active'
-                              ? 'bg-green-100 text-green-800'
-                              : contact.status === 'bounced'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {contact.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => setEditingContactId(contact.id)}
-                              className="text-[#57377d] hover:text-[#f3ba42] font-medium text-sm transition-colors"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteContact(contact.id)}
-                              className="text-red-600 hover:text-red-700 font-medium text-sm transition-colors"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
+                        </th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Name</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Email</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Company</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Role</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Industry</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Status</th>
+                        <th className="px-4 py-3 text-right text-sm font-semibold">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {filteredContacts.map((contact) => (
+                        <tr key={contact.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedContacts.has(contact.id)}
+                              onChange={() => handleContactCheckbox(contact.id)}
+                              className="w-4 h-4 rounded border-black"
+                            />
+                          </td>
+                          <td className="px-4 py-3 font-medium">
+                            {contact.first_name || contact.last_name
+                              ? `${contact.first_name || ''} ${contact.last_name || ''}`.trim()
+                              : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">{contact.email}</td>
+                          <td className="px-4 py-3 text-gray-600">{contact.company || '-'}</td>
+                          <td className="px-4 py-3 text-gray-600">{contact.role || '-'}</td>
+                          <td className="px-4 py-3 text-gray-600">{contact.industry || '-'}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-block px-2 py-1 text-xs rounded-full ${
+                              contact.status === 'active'
+                                ? 'bg-green-100 text-green-800'
+                                : contact.status === 'bounced'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {contact.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => setEditingContactId(contact.id)}
+                                className="text-[#57377d] hover:text-[#f3ba42] font-medium text-sm transition-colors"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteContact(contact.id)}
+                                className="text-red-600 hover:text-red-700 font-medium text-sm transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
