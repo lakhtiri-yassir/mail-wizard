@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { useAuth } from '../contexts/AuthContext';
+import { Logo } from '../components/ui/Logo';
 
 export const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -31,24 +32,13 @@ export const LoginPage = () => {
     <div className="min-h-screen bg-white flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <button onClick={() => navigate('/')} className="inline-block mb-6">
-            <img
-              src="/logo.jpg"
-              alt="Email Wizard"
-              className="h-12 w-auto object-contain mx-auto"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                const fallback = e.currentTarget.nextElementSibling;
-                if (fallback) (fallback as HTMLElement).style.display = 'flex';
-              }}
+          <div className="flex justify-center mb-6">
+            <Logo 
+              variant="full" 
+              size="lg"
+              onClick={() => navigate('/')}
             />
-            <div className="hidden items-center justify-center gap-2">
-              <div className="w-10 h-10 bg-purple rounded-full flex items-center justify-center border-2 border-black">
-                <span className="text-white font-bold text-xl">EW</span>
-              </div>
-              <span className="text-3xl font-serif font-bold">Email Wizard</span>
-            </div>
-          </button>
+          </div>
           <h1 className="text-3xl font-serif font-bold mb-2">Welcome back</h1>
           <p className="text-gray-600">Sign in to your account to continue</p>
         </div>

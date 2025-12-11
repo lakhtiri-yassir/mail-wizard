@@ -1,17 +1,9 @@
-/**
- * Signup Page
- * 
- * User registration page with automatic login after account creation.
- * 
- * FIX APPLIED: Removed manual success handling - AuthContext handles redirect
- */
-
 import { useState } from 'react';
-import { Mail } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { useAuth } from '../contexts/AuthContext';
-import { Link } from 'react-router-dom';
+import { Logo } from '../components/ui/Logo';
 
 export const SignupPage = () => {
   const [fullName, setFullName] = useState('');
@@ -20,13 +12,13 @@ export const SignupPage = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    // Validate inputs
     if (!fullName.trim()) {
       setError('Please enter your full name');
       setLoading(false);
@@ -46,9 +38,7 @@ export const SignupPage = () => {
     }
 
     try {
-      // signUp will automatically log in and redirect to dashboard
       await signUp(email, password, fullName);
-      // No need for manual success handling - AuthContext handles it
     } catch (err: any) {
       setError(err.message || 'Failed to sign up');
     } finally {
@@ -60,9 +50,12 @@ export const SignupPage = () => {
     <div className="min-h-screen bg-white flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-2 mb-6">
-            <Mail className="w-10 h-10 text-gold" />
-            <span className="text-3xl font-serif font-bold">Email Wizard</span>
+          <div className="flex justify-center mb-6">
+            <Logo 
+              variant="full" 
+              size="lg"
+              onClick={() => navigate('/')}
+            />
           </div>
           <h1 className="text-3xl font-serif font-bold mb-2">Get started free</h1>
           <p className="text-gray-600">Create your account in seconds</p>
