@@ -79,6 +79,7 @@ serve(async (req) => {
       html,
       text,
       reply_to,
+      from_name,
       campaign_id,      // ← CRITICAL: Must be present
       contact_id,       // ← CRITICAL: Must be present
       sending_domain_id,
@@ -110,7 +111,7 @@ serve(async (req) => {
 
     // Determine sender email
     let fromEmail = '';
-    let fromName = personalization.sender_name || 'Email Wizard';
+    let fromName = from_name || 'Email Wizard';
 
     // Try to get custom domain if specified
     if (sending_domain_id) {
