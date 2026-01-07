@@ -34,6 +34,15 @@ import {
   Calendar,
   ChevronDown
 } from 'lucide-react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'recharts';
 import { AppLayout } from '../../components/app/AppLayout';
 import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../contexts/AuthContext';
@@ -594,14 +603,14 @@ export default function Dashboard() {
             {/* Opens Over Time */}
             <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
               <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <TrendingUp size={20} className="text-blue-600" />
+                <TrendingUp size={20} className="text-purple" />
                 Opens Over Time
               </h3>
               <div className="h-64">
                 <TimeSeriesChart
                   data={timeSeriesData}
                   dataKey="opens"
-                  color="#3b82f6"
+                  color="#57377d"
                   formatDate={formatDateForDisplay}
                 />
               </div>
@@ -610,14 +619,14 @@ export default function Dashboard() {
             {/* Clicks Over Time */}
             <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
               <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <MousePointerClick size={20} className="text-purple" />
+                <MousePointerClick size={20} className="text-gold" />
                 Clicks Over Time
               </h3>
               <div className="h-64">
                 <TimeSeriesChart
                   data={timeSeriesData}
                   dataKey="clicks"
-                  color="#9333ea"
+                  color="#f3ba42"
                   formatDate={formatDateForDisplay}
                 />
               </div>
@@ -719,7 +728,7 @@ export default function Dashboard() {
 }
 
 // ============================================================================
-// ✅ NEW: TIME SERIES CHART COMPONENT
+// ✅ NEW: TIME SERIES CHART COMPONENT (Using Recharts)
 // ============================================================================
 
 interface TimeSeriesChartProps {
@@ -728,6 +737,38 @@ interface TimeSeriesChartProps {
   color: string;
   formatDate: (date: string) => string;
 }
+
+/**
+ * CUSTOM TOOLTIP
+ */
+const CustomTooltip = ({ active, payload, dataKey }: any) => {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const data = payload[0].payload;
+  const formattedDate = new Date(data.date).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  return (
+    <div className="bg-white border-2 border-black rounded-lg p-3 shadow-lg">
+      <p className="font-sans text-sm font-semibold mb-2">{formattedDate}</p>
+      <div className="flex items-center gap-2">
+        <div 
+          className="w-3 h-3 rounded-full" 
+          style={{ backgroundColor: dataKey === 'opens' ? '#57377d' : '#f3ba42' }}
+        />
+        <span className="font-sans text-sm">
+          {dataKey === 'opens' ? 'Opens' : 'Clicks'}: {' '}
+          <span className="font-semibold">{data[dataKey].toLocaleString()}</span>
+        </span>
+      </div>
+    </div>
+  );
+};
 
 function TimeSeriesChart({ data, dataKey, color, formatDate }: TimeSeriesChartProps) {
   if (data.length === 0) {
@@ -738,68 +779,72 @@ function TimeSeriesChart({ data, dataKey, color, formatDate }: TimeSeriesChartPr
     );
   }
 
-  const maxValue = Math.max(...data.map(d => d[dataKey]), 1);
-  const scale = 100 / maxValue;
+  // Transform data for Recharts
+  const chartData = data.map(point => ({
+    date: point.date,
+    displayDate: formatDate(point.date),
+    [dataKey]: point[dataKey]
+  }));
 
-  // ✅ FIXED: Smart date label formatting based on data length
-  const getDateLabel = (date: string, index: number, total: number): string | null => {
-    const formattedDate = formatDate(date);
-    
-    // Show all labels if 7 or fewer data points
-    if (total <= 7) return formattedDate;
-    
-    // Show every other label if 8-14 data points
-    if (total <= 14) return index % 2 === 0 ? formattedDate : null;
-    
-    // Show every 3rd label if 15-21 data points
-    if (total <= 21) return index % 3 === 0 || index === total - 1 ? formattedDate : null;
-    
-    // Show every 5th label if 22-30 data points
-    if (total <= 30) return index % 5 === 0 || index === total - 1 ? formattedDate : null;
-    
-    // Show every 7th label if more than 30 data points
-    return index % 7 === 0 || index === total - 1 ? formattedDate : null;
-  };
+  // Calculate total
+  const total = data.reduce((sum, d) => sum + d[dataKey], 0);
 
   return (
     <div className="h-full flex flex-col">
       {/* Chart Area */}
-      <div className="flex-1 flex items-end justify-between gap-1 px-2">
-        {data.map((point, index) => {
-          const height = point[dataKey] * scale;
-          const dateLabel = getDateLabel(point.date, index, data.length);
-          
-          return (
-            <div key={index} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-              <div className="w-full flex items-end justify-center" style={{ height: '200px' }}>
-                <div
-                  className="w-full rounded-t-lg transition-all duration-300 hover:opacity-80 relative group"
-                  style={{
-                    height: `${height}%`,
-                    backgroundColor: color,
-                    minHeight: point[dataKey] > 0 ? '4px' : '0px',
-                  }}
-                >
-                  {/* Tooltip */}
-                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                    {formatDate(point.date)}: {point[dataKey]} {dataKey}
-                  </div>
-                </div>
-              </div>
-              {/* ✅ FIXED: Only show label if not null, with proper truncation */}
-              {dateLabel && (
-                <div className="text-xs text-gray-600 text-center truncate w-full">
-                  {dateLabel}
-                </div>
-              )}
-            </div>
-          );
-        })}
+      <div className="flex-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={chartData}
+            margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+          >
+            {/* Grid */}
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            
+            {/* X-Axis */}
+            <XAxis
+              dataKey="displayDate"
+              stroke="#000000"
+              style={{
+                fontSize: '12px',
+                fontFamily: 'DM Sans, sans-serif'
+              }}
+              tick={{ fill: '#000000' }}
+              angle={-45}
+              textAnchor="end"
+              height={60}
+            />
+            
+            {/* Y-Axis */}
+            <YAxis
+              stroke="#000000"
+              style={{
+                fontSize: '12px',
+                fontFamily: 'DM Sans, sans-serif'
+              }}
+              tick={{ fill: '#000000' }}
+              allowDecimals={false}
+            />
+            
+            {/* Tooltip */}
+            <Tooltip content={<CustomTooltip dataKey={dataKey} />} />
+            
+            {/* Line */}
+            <Line
+              type="monotone"
+              dataKey={dataKey}
+              stroke={color}
+              strokeWidth={2}
+              dot={{ fill: color, r: 4 }}
+              activeDot={{ r: 6 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
 
-      {/* Y-Axis Label */}
-      <div className="mt-4 text-center text-sm text-gray-500">
-        Total {dataKey === 'opens' ? 'Opens' : 'Clicks'}: {data.reduce((sum, d) => sum + d[dataKey], 0)}
+      {/* Total Label */}
+      <div className="mt-2 text-center text-sm font-medium text-gray-700">
+        Total {dataKey === 'opens' ? 'Opens' : 'Clicks'}: {total.toLocaleString()}
       </div>
     </div>
   );
