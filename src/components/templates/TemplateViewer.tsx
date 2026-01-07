@@ -16,6 +16,7 @@
  */
 
 import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Edit2, Eye, Mail, Trash2, GripVertical } from 'lucide-react';
 import { Button } from '../ui/Button';
 import SectionEditor from './SectionEditor';
@@ -53,6 +54,10 @@ export default function TemplateViewer({
   onDelete,
   showActions = true
 }: TemplateViewerProps) {
+  // Initialize navigation hooks
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
   const [sections, setSections] = useState<Section[]>(template.content.sections || []);
 

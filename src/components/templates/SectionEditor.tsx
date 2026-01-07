@@ -230,11 +230,23 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
 
     if (!isExpanded) {
       return (
-        <div className="p-4 text-sm text-gray-500 italic">
-          Click to expand and edit...
+        <div 
+          className="p-4 text-sm text-gray-500 italic cursor-pointer hover:bg-gray-50 hover:text-gray-700 transition-colors rounded-lg"
+          onClick={() => toggleSectionExpanded(section.id)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleSectionExpanded(section.id);
+            }
+          }}
+        >
+          Click anywhere here to expand and edit this section...
         </div>
       );
     }
+
 
     switch (section.type) {
       case 'header':
