@@ -200,10 +200,6 @@ const [formData, setFormData] = useState<CampaignFormData>(getInitialFormData())
   const [loadingTemplates, setLoadingTemplates] = useState(true);
 
   // ============================================================================
-  // AUTOSAVE FUNCTIONALITY - NEW
-  // ============================================================================
-
-  // ============================================================================
   // DRAFT SAVING - DATABASE ONLY (NO AUTO-SAVE)
   // ============================================================================
 
@@ -291,8 +287,6 @@ const [formData, setFormData] = useState<CampaignFormData>(getInitialFormData())
     }
   };
 
-    loadDraft();
-  }, [user, shouldLoadTemplate, isEditMode]);
 
 
   // ============================================================================
