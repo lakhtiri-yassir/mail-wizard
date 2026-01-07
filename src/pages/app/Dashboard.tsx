@@ -176,17 +176,18 @@ export default function Dashboard() {
         .eq('user_id', user.id);
 
       // ✅ FIXED: Calculate total opens and clicks from email_events table
+      // Filter by user's campaigns only
       let totalOpens = 0;
       let totalClicks = 0;
 
       if (campaigns && campaigns.length > 0) {
         const campaignIds = campaigns.map(c => c.id);
         
-        // Get analytics data from email_events table
+        // Get analytics data from email_events table filtered by user's campaigns
         const { data: analytics } = await supabase
-          .from('email_events')  // ✅ FIXED: Correct table name
+          .from('email_events')
           .select('event_type')
-          .in('campaign_id', campaignIds);
+          .in('campaign_id', campaignIds);  // ✅ This filters by user's campaigns
 
         if (analytics) {
           totalOpens = analytics.filter(a => a.event_type === 'open').length;
@@ -220,11 +221,25 @@ export default function Dashboard() {
     try {
       const { startDate, endDate } = getDateRangeBounds();
 
-      // ✅ FIXED: Fetch email events within date range
+      // ✅ FIXED: First get user's campaigns to filter analytics
+      const { data: userCampaigns } = await supabase
+        .from('campaigns')
+        .select('id')
+        .eq('user_id', user.id);
+
+      if (!userCampaigns || userCampaigns.length === 0) {
+        setTimeSeriesData([]);
+        return;
+      }
+
+      const campaignIds = userCampaigns.map(c => c.id);
+
+      // ✅ FIXED: Fetch email events within date range filtered by user's campaigns
       const { data: analytics } = await supabase
-        .from('email_events')  // ✅ FIXED: Correct table name
-        .select('event_type, timestamp, campaign_id')  // ✅ FIXED: timestamp not created_at
-        .gte('timestamp', startDate)  // ✅ FIXED: Use timestamp column
+        .from('email_events')
+        .select('event_type, timestamp, campaign_id')
+        .in('campaign_id', campaignIds)  // ✅ Filter by user's campaigns
+        .gte('timestamp', startDate)
         .lte('timestamp', endDate)
         .order('timestamp', { ascending: true });
 
@@ -726,14 +741,36 @@ function TimeSeriesChart({ data, dataKey, color, formatDate }: TimeSeriesChartPr
   const maxValue = Math.max(...data.map(d => d[dataKey]), 1);
   const scale = 100 / maxValue;
 
+  // ✅ FIXED: Smart date label formatting based on data length
+  const getDateLabel = (date: string, index: number, total: number): string | null => {
+    const formattedDate = formatDate(date);
+    
+    // Show all labels if 7 or fewer data points
+    if (total <= 7) return formattedDate;
+    
+    // Show every other label if 8-14 data points
+    if (total <= 14) return index % 2 === 0 ? formattedDate : null;
+    
+    // Show every 3rd label if 15-21 data points
+    if (total <= 21) return index % 3 === 0 || index === total - 1 ? formattedDate : null;
+    
+    // Show every 5th label if 22-30 data points
+    if (total <= 30) return index % 5 === 0 || index === total - 1 ? formattedDate : null;
+    
+    // Show every 7th label if more than 30 data points
+    return index % 7 === 0 || index === total - 1 ? formattedDate : null;
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* Chart Area */}
-      <div className="flex-1 flex items-end justify-between gap-2 px-4">
+      <div className="flex-1 flex items-end justify-between gap-1 px-2">
         {data.map((point, index) => {
           const height = point[dataKey] * scale;
+          const dateLabel = getDateLabel(point.date, index, data.length);
+          
           return (
-            <div key={index} className="flex-1 flex flex-col items-center gap-2">
+            <div key={index} className="flex-1 flex flex-col items-center gap-1 min-w-0">
               <div className="w-full flex items-end justify-center" style={{ height: '200px' }}>
                 <div
                   className="w-full rounded-t-lg transition-all duration-300 hover:opacity-80 relative group"
@@ -745,13 +782,16 @@ function TimeSeriesChart({ data, dataKey, color, formatDate }: TimeSeriesChartPr
                 >
                   {/* Tooltip */}
                   <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                    {point[dataKey]} {dataKey}
+                    {formatDate(point.date)}: {point[dataKey]} {dataKey}
                   </div>
                 </div>
               </div>
-              <div className="text-xs text-gray-600 text-center truncate w-full">
-                {formatDate(point.date)}
-              </div>
+              {/* ✅ FIXED: Only show label if not null, with proper truncation */}
+              {dateLabel && (
+                <div className="text-xs text-gray-600 text-center truncate w-full">
+                  {dateLabel}
+                </div>
+              )}
             </div>
           );
         })}
