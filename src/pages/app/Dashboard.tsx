@@ -41,9 +41,9 @@ import {
   Tooltip,
   ResponsiveContainer
 } from 'recharts';
-import { AppLayout } from '../../components/app/AppLayout';
-import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
+import { AppLayout } from '../components/app/AppLayout';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
 interface DashboardStats {
@@ -340,7 +340,7 @@ export default function Dashboard() {
         {/* Quick Actions Bar */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <button
-            onClick={() => navigate('/campaigns/new')}
+            onClick={() => navigate('/app/campaigns/new')}
             className="group relative bg-gradient-to-br from-purple to-purple/80 text-white rounded-xl border-2 border-black shadow-lg p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
           >
             <div className="flex flex-col items-center gap-3">
@@ -355,7 +355,7 @@ export default function Dashboard() {
           </button>
 
           <button
-            onClick={() => navigate('/contacts')}
+            onClick={() => navigate('/app/contacts')}
             className="group bg-gradient-to-br from-gold to-gold/80 text-white rounded-xl border-2 border-black shadow-lg p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
           >
             <div className="flex flex-col items-center gap-3">
@@ -367,7 +367,7 @@ export default function Dashboard() {
           </button>
 
           <button
-            onClick={() => navigate('/templates')}
+            onClick={() => navigate('/app/templates')}
             className="group bg-white text-purple rounded-xl border-2 border-black shadow-lg p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:bg-purple hover:text-white"
           >
             <div className="flex flex-col items-center gap-3">
@@ -379,7 +379,7 @@ export default function Dashboard() {
           </button>
 
           <button
-            onClick={() => navigate('/analytics')}
+            onClick={() => navigate('/app/analytics')}
             className="group bg-white text-gold rounded-xl border-2 border-black shadow-lg p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:bg-gold hover:text-white"
           >
             <div className="flex flex-col items-center gap-3">
@@ -611,7 +611,7 @@ export default function Dashboard() {
               <h2 className="text-xl font-bold">Recent Campaigns</h2>
             </div>
             <button
-              onClick={() => navigate('/campaigns')}
+              onClick={() => navigate('/app/campaigns')}
               className="flex items-center gap-2 px-4 py-2 text-purple hover:text-purple/80 font-medium transition-colors group"
             >
               View All
@@ -627,7 +627,7 @@ export default function Dashboard() {
               <h3 className="text-xl font-bold mb-2">No campaigns yet</h3>
               <p className="text-gray-600 mb-6">Create your first campaign to start sending emails</p>
               <button
-                onClick={() => navigate('/campaigns/new')}
+                onClick={() => navigate('/app/campaigns/new')}
                 className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-purple to-gold text-white font-bold rounded-lg border-2 border-black hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
               >
                 <Plus size={20} />
@@ -683,7 +683,7 @@ export default function Dashboard() {
                       </td>
                       <td className="py-4 px-4 text-right">
                         <button
-                          onClick={() => navigate(`/campaigns/${campaign.id}`)}
+                          onClick={() => navigate(`/app/campaigns/${campaign.id}`)}
                           className="inline-flex items-center gap-1 px-4 py-2 bg-purple text-white font-medium rounded-lg border-2 border-black hover:bg-opacity-90 transition-all duration-200 hover:scale-105"
                         >
                           View
