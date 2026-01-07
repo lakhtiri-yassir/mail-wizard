@@ -1,35 +1,24 @@
 /**
  * ============================================================================
- * Dashboard Component - FINAL WITH TIME-BASED CHARTS
+ * Dashboard Component - CLEANED VERSION
  * ============================================================================
  * 
- * FIX 7: Complete analytics dashboard with:
- * - Time-based charts (not campaign-based)
- * - Date range selector (Today, Yesterday, Last Week, Last Month, Custom)
- * - Open count and Click count over time
- * - Quick Start Guide for new users
- * - Setup progress tracking
+ * Analytics dashboard with:
+ * - Stats overview (campaigns, contacts, emails sent, opens, clicks)
+ * - Time-based analytics charts
+ * - Date range selector (Today, Yesterday, Last 7 Days, Last 30 Days, Custom)
+ * - Recent campaigns table
  * 
+ * Quick Start Guide removed - see /tutorial page for complete guide
  * ============================================================================
  */
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BarChart,
   Mail,
   Users,
-  CheckCircle,
-  Clock,
   TrendingUp,
-  AlertCircle,
-  PlayCircle,
-  X,
-  ChevronRight,
-  Rocket,
-  Globe,
-  BookOpen,
-  Zap,
   MousePointerClick,
   Calendar,
   ChevronDown
@@ -44,7 +33,6 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import { AppLayout } from '../../components/app/AppLayout';
-import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
@@ -56,13 +44,6 @@ interface DashboardStats {
   totalOpens: number;
   totalClicks: number;
   recentCampaigns: any[];
-}
-
-interface SetupProgress {
-  hasVerifiedDomain: boolean;
-  hasContacts: boolean;
-  hasTemplate: boolean;
-  hasSentCampaign: boolean;
 }
 
 interface TimeSeriesDataPoint {
@@ -86,28 +67,16 @@ export default function Dashboard() {
     totalClicks: 0,
     recentCampaigns: [],
   });
-  const [setupProgress, setSetupProgress] = useState<SetupProgress>({
-    hasVerifiedDomain: false,
-    hasContacts: false,
-    hasTemplate: false,
-    hasSentCampaign: false,
-  });
   
-  // ✅ NEW: Time series data and date range
+  // Time series data and date range
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesDataPoint[]>([]);
-  const [selectedDateRange, setSelectedDateRange] = useState<DateRange>('last7days');
+  const [selectedDateRange, setSelectedDateRange] = useState<DateRange>('last30days');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [showDatePicker, setShowDatePicker] = useState(false);
-  
-  // Quick Start Guide state
-  const [showQuickStart, setShowQuickStart] = useState(false);
-  const [quickStartDismissed, setQuickStartDismissed] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
-    checkSetupProgress();
-    checkQuickStartStatus();
   }, [user]);
 
   useEffect(() => {
@@ -115,55 +84,6 @@ export default function Dashboard() {
       loadTimeSeriesData();
     }
   }, [user, selectedDateRange, customStartDate, customEndDate]);
-
-  async function checkQuickStartStatus() {
-    const dismissed = localStorage.getItem(`quickStartDismissed_${user?.id}`);
-    setQuickStartDismissed(dismissed === 'true');
-    
-    if (!dismissed) {
-      setTimeout(() => setShowQuickStart(true), 1000);
-    }
-  }
-
-  async function checkSetupProgress() {
-    if (!user) return;
-
-    try {
-      const { data: domains } = await supabase
-        .from('sending_domains')
-        .select('verification_status')
-        .eq('user_id', user.id)
-        .eq('verification_status', 'verified')
-        .limit(1);
-
-      const { data: contacts, count: contactCount } = await supabase
-        .from('contacts')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id);
-
-      const { data: templates } = await supabase
-        .from('templates')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1);
-
-      const { data: campaigns } = await supabase
-        .from('campaigns')
-        .select('status')
-        .eq('user_id', user.id)
-        .in('status', ['sent', 'scheduled'])
-        .limit(1);
-
-      setSetupProgress({
-        hasVerifiedDomain: (domains?.length || 0) > 0,
-        hasContacts: (contactCount || 0) > 0,
-        hasTemplate: (templates?.length || 0) > 0,
-        hasSentCampaign: (campaigns?.length || 0) > 0,
-      });
-    } catch (error) {
-      console.error('Error checking setup progress:', error);
-    }
-  }
 
   async function loadDashboardData() {
     if (!user) return;
@@ -184,8 +104,7 @@ export default function Dashboard() {
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
 
-      // ✅ FIXED: Calculate total opens and clicks from email_events table
-      // Filter by user's campaigns only
+      // Calculate total opens and clicks from email_events table
       let totalOpens = 0;
       let totalClicks = 0;
 
@@ -196,7 +115,7 @@ export default function Dashboard() {
         const { data: analytics } = await supabase
           .from('email_events')
           .select('event_type')
-          .in('campaign_id', campaignIds);  // ✅ This filters by user's campaigns
+          .in('campaign_id', campaignIds);
 
         if (analytics) {
           totalOpens = analytics.filter(a => a.event_type === 'open').length;
@@ -223,14 +142,14 @@ export default function Dashboard() {
     }
   }
 
-  // ✅ NEW: Load time series data based on date range
+  // Load time series data based on date range
   async function loadTimeSeriesData() {
     if (!user) return;
 
     try {
       const { startDate, endDate } = getDateRangeBounds();
 
-      // ✅ FIXED: First get user's campaigns to filter analytics
+      // First get user's campaigns to filter analytics
       const { data: userCampaigns } = await supabase
         .from('campaigns')
         .select('id')
@@ -243,11 +162,11 @@ export default function Dashboard() {
 
       const campaignIds = userCampaigns.map(c => c.id);
 
-      // ✅ FIXED: Fetch email events within date range filtered by user's campaigns
+      // Fetch email events within date range filtered by user's campaigns
       const { data: analytics } = await supabase
         .from('email_events')
         .select('event_type, timestamp, campaign_id')
-        .in('campaign_id', campaignIds)  // ✅ Filter by user's campaigns
+        .in('campaign_id', campaignIds)
         .gte('timestamp', startDate)
         .lte('timestamp', endDate)
         .order('timestamp', { ascending: true });
@@ -268,7 +187,7 @@ export default function Dashboard() {
 
       // Populate with actual data
       analytics.forEach(event => {
-        const date = new Date(event.timestamp).toISOString().split('T')[0];  // ✅ FIXED: Use timestamp
+        const date = new Date(event.timestamp).toISOString().split('T')[0];
         const current = dataByDate.get(date) || { opens: 0, clicks: 0 };
         
         if (event.event_type === 'open') {
@@ -296,7 +215,7 @@ export default function Dashboard() {
     }
   }
 
-  // ✅ NEW: Generate date range array
+  // Generate date range array
   function generateDateRange(start: string, end: string): string[] {
     const dates: string[] = [];
     const startDate = new Date(start);
@@ -311,7 +230,7 @@ export default function Dashboard() {
     return dates;
   }
 
-  // ✅ NEW: Get date range bounds based on selection
+  // Get date range bounds based on selection
   function getDateRangeBounds(): { startDate: string; endDate: string } {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -358,33 +277,27 @@ export default function Dashboard() {
     };
   }
 
-  // ✅ NEW: Format date for display
+  // Format date for display
   function formatDateForDisplay(dateStr: string): string {
     const date = new Date(dateStr);
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
 
-    if (date.toDateString() === today.toDateString()) {
-      return 'Today';
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
-    } else if (selectedDateRange === 'last7days' || selectedDateRange === 'last30days') {
+    const isToday = date.toDateString() === today.toDateString();
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+
+    if (isToday) return 'Today';
+    if (isYesterday) return 'Yesterday';
+
+    if (selectedDateRange === 'last7days' || selectedDateRange === 'last30days') {
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    } else {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     }
+
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
-  function handleDismissQuickStart(permanent: boolean) {
-    setShowQuickStart(false);
-    if (permanent) {
-      localStorage.setItem(`quickStartDismissed_${user?.id}`, 'true');
-      setQuickStartDismissed(true);
-    }
-  }
-
-  // ✅ NEW: Handle date range change
+  // Handle date range change
   function handleDateRangeChange(range: DateRange) {
     setSelectedDateRange(range);
     if (range !== 'custom') {
@@ -392,190 +305,187 @@ export default function Dashboard() {
     }
   }
 
-  // ✅ NEW: Apply custom date range
+  // Apply custom date range
   function applyCustomDateRange() {
-    if (customStartDate && customEndDate) {
-      setSelectedDateRange('custom');
-      setShowDatePicker(false);
-      loadTimeSeriesData();
-    } else {
+    if (!customStartDate || !customEndDate) {
       toast.error('Please select both start and end dates');
+      return;
     }
+    setSelectedDateRange('custom');
+    setShowDatePicker(false);
   }
 
-  const setupSteps = Object.values(setupProgress);
-  const completedSteps = setupSteps.filter(Boolean).length;
-  const setupPercentage = (completedSteps / setupSteps.length) * 100;
-  const isSetupComplete = setupPercentage === 100;
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <div className="animate-spin w-16 h-16 border-4 border-gold border-t-transparent rounded-full mx-auto mb-4" />
+            <p className="text-gray-600">Loading dashboard...</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
-      <div className="p-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-serif font-bold">Dashboard</h1>
-          <p className="text-gray-600 mt-1">
-            Welcome back! Here's your email campaign analytics.
-          </p>
+          <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
+          <p className="text-gray-600">Welcome back! Here's your email campaign analytics.</p>
         </div>
-
-        {/* Setup Progress Card */}
-        {!isSetupComplete && (
-          <div className="bg-gradient-to-r from-purple to-gold/80 rounded-lg p-6 mb-8 text-white shadow-lg">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h2 className="text-xl font-bold mb-2 flex items-center gap-2">
-                  <Rocket size={24} />
-                  Get Started with Email Wizard
-                </h2>
-                <p className="text-white/90 text-sm">
-                  Complete these steps to start sending professional email campaigns
-                </p>
-              </div>
-              <button
-                onClick={() => setShowQuickStart(true)}
-                className="px-4 py-2 bg-white text-purple rounded-lg font-medium hover:bg-gray-100 transition-colors flex items-center gap-2"
-              >
-                <PlayCircle size={16} />
-                View Guide
-              </button>
-            </div>
-
-            <div className="bg-white/20 rounded-full h-3 overflow-hidden mb-4">
-              <div
-                className="bg-white h-full transition-all duration-500 rounded-full"
-                style={{ width: `${setupPercentage}%` }}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <SetupChecklistItem
-                completed={setupProgress.hasVerifiedDomain}
-                title="Verify your domain"
-                onClick={() => navigate('/app/settings?tab=domains')}
-              />
-              <SetupChecklistItem
-                completed={setupProgress.hasContacts}
-                title="Add contacts"
-                onClick={() => navigate('/app/contacts')}
-              />
-              <SetupChecklistItem
-                completed={setupProgress.hasTemplate}
-                title="Create a template"
-                onClick={() => navigate('/app/templates')}
-              />
-              <SetupChecklistItem
-                completed={setupProgress.hasSentCampaign}
-                title="Send your first campaign"
-                onClick={() => navigate('/app/campaigns')}
-              />
-            </div>
-
-            <div className="text-sm text-white/80 mt-4">
-              {completedSteps} of {setupSteps.length} steps completed ({Math.round(setupPercentage)}%)
-            </div>
-          </div>
-        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-          <StatCard
-            icon={<Mail size={24} />}
-            title="Total Campaigns"
-            value={stats.totalCampaigns}
-            iconColor="text-purple"
-            bgColor="bg-purple/10"
-          />
-          <StatCard
-            icon={<Users size={24} />}
-            title="Total Contacts"
-            value={stats.totalContacts}
-            iconColor="text-gold"
-            bgColor="bg-gold/10"
-          />
-          <StatCard
-            icon={<TrendingUp size={24} />}
-            title="Emails Sent"
-            value={stats.emailsSent}
-            iconColor="text-green-600"
-            bgColor="bg-green-100"
-          />
-          <StatCard
-            icon={<BarChart size={24} />}
-            title="Total Opens"
-            value={stats.totalOpens}
-            iconColor="text-blue-600"
-            bgColor="bg-blue-100"
-          />
-          <StatCard
-            icon={<MousePointerClick size={24} />}
-            title="Total Clicks"
-            value={stats.totalClicks}
-            iconColor="text-purple"
-            bgColor="bg-purple/10"
-          />
+          {/* Total Campaigns */}
+          <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-purple bg-opacity-10 rounded-lg">
+                <Mail className="text-purple" size={24} />
+              </div>
+            </div>
+            <div className="text-3xl font-bold mb-1">{stats.totalCampaigns}</div>
+            <div className="text-sm text-gray-600">Total Campaigns</div>
+          </div>
+
+          {/* Total Contacts */}
+          <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-gold bg-opacity-10 rounded-lg">
+                <Users className="text-gold" size={24} />
+              </div>
+            </div>
+            <div className="text-3xl font-bold mb-1">{stats.totalContacts}</div>
+            <div className="text-sm text-gray-600">Total Contacts</div>
+          </div>
+
+          {/* Emails Sent */}
+          <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-green-500 bg-opacity-10 rounded-lg">
+                <TrendingUp className="text-green-600" size={24} />
+              </div>
+            </div>
+            <div className="text-3xl font-bold mb-1">{stats.emailsSent}</div>
+            <div className="text-sm text-gray-600">Emails Sent</div>
+          </div>
+
+          {/* Total Opens */}
+          <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-blue-500 bg-opacity-10 rounded-lg">
+                <Mail className="text-blue-600" size={24} />
+              </div>
+            </div>
+            <div className="text-3xl font-bold mb-1">{stats.totalOpens}</div>
+            <div className="text-sm text-gray-600">Total Opens</div>
+          </div>
+
+          {/* Total Clicks */}
+          <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-purple bg-opacity-10 rounded-lg">
+                <MousePointerClick className="text-purple" size={24} />
+              </div>
+            </div>
+            <div className="text-3xl font-bold mb-1">{stats.totalClicks}</div>
+            <div className="text-sm text-gray-600">Total Clicks</div>
+          </div>
         </div>
 
-        {/* ✅ NEW: Date Range Selector */}
-        <div className="bg-white rounded-lg border-2 border-black shadow-lg p-4 mb-6">
-          <div className="flex items-center justify-between flex-wrap gap-4">
+        {/* Date Range Selector */}
+        <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6 mb-8">
+          <div className="flex flex-col space-y-4">
             <div className="flex items-center gap-2">
-              <Calendar size={20} className="text-gray-600" />
-              <span className="font-semibold text-gray-700">Time Period:</span>
+              <Calendar className="text-purple" size={20} />
+              <span className="font-semibold">Time Period:</span>
             </div>
             
-            <div className="flex items-center gap-2 flex-wrap">
-              <DateRangeButton
-                active={selectedDateRange === 'today'}
-                onClick={() => handleDateRangeChange('today')}
-                label="Today"
-              />
-              <DateRangeButton
-                active={selectedDateRange === 'yesterday'}
-                onClick={() => handleDateRangeChange('yesterday')}
-                label="Yesterday"
-              />
-              <DateRangeButton
-                active={selectedDateRange === 'last7days'}
-                onClick={() => handleDateRangeChange('last7days')}
-                label="Last 7 Days"
-              />
-              <DateRangeButton
-                active={selectedDateRange === 'last30days'}
-                onClick={() => handleDateRangeChange('last30days')}
-                label="Last 30 Days"
-              />
+            <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => setShowDatePicker(!showDatePicker)}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                onClick={() => handleDateRangeChange('today')}
+                className={`px-4 py-2 rounded-lg border-2 border-black font-medium transition-colors ${
+                  selectedDateRange === 'today'
+                    ? 'bg-purple text-white'
+                    : 'bg-white hover:bg-gray-50'
+                }`}
+              >
+                Today
+              </button>
+              
+              <button
+                onClick={() => handleDateRangeChange('yesterday')}
+                className={`px-4 py-2 rounded-lg border-2 border-black font-medium transition-colors ${
+                  selectedDateRange === 'yesterday'
+                    ? 'bg-purple text-white'
+                    : 'bg-white hover:bg-gray-50'
+                }`}
+              >
+                Yesterday
+              </button>
+              
+              <button
+                onClick={() => handleDateRangeChange('last7days')}
+                className={`px-4 py-2 rounded-lg border-2 border-black font-medium transition-colors ${
+                  selectedDateRange === 'last7days'
+                    ? 'bg-purple text-white'
+                    : 'bg-white hover:bg-gray-50'
+                }`}
+              >
+                Last 7 Days
+              </button>
+              
+              <button
+                onClick={() => handleDateRangeChange('last30days')}
+                className={`px-4 py-2 rounded-lg border-2 border-black font-medium transition-colors ${
+                  selectedDateRange === 'last30days'
+                    ? 'bg-purple text-white'
+                    : 'bg-white hover:bg-gray-50'
+                }`}
+              >
+                Last 30 Days
+              </button>
+              
+              <button
+                onClick={() => {
+                  setShowDatePicker(!showDatePicker);
+                  if (!showDatePicker) {
+                    setSelectedDateRange('custom');
+                  }
+                }}
+                className={`px-4 py-2 rounded-lg border-2 border-black font-medium transition-colors flex items-center gap-2 ${
                   selectedDateRange === 'custom'
                     ? 'bg-purple text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-white hover:bg-gray-50'
                 }`}
               >
                 Custom Range
-                <ChevronDown size={16} />
+                <ChevronDown
+                  size={16}
+                  className={`transform transition-transform ${showDatePicker ? 'rotate-180' : ''}`}
+                />
               </button>
             </div>
-          </div>
 
-          {/* Custom Date Picker */}
-          {showDatePicker && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            {/* Custom Date Picker */}
+            {showDatePicker && (
+              <div className="flex flex-wrap items-end gap-4 p-4 bg-gray-50 rounded-lg border-2 border-gray-200">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Start Date
                   </label>
                   <input
                     type="date"
                     value={customStartDate}
                     onChange={(e) => setCustomStartDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple focus:border-transparent"
+                    className="px-3 py-2 border-2 border-black rounded-lg"
                   />
                 </div>
+                
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     End Date
                   </label>
                   <input
@@ -583,125 +493,107 @@ export default function Dashboard() {
                     value={customEndDate}
                     onChange={(e) => setCustomEndDate(e.target.value)}
                     min={customStartDate}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple focus:border-transparent"
+                    className="px-3 py-2 border-2 border-black rounded-lg"
                   />
                 </div>
+                
                 <button
                   onClick={applyCustomDateRange}
-                  className="px-6 py-2 bg-purple text-white rounded-lg font-medium hover:bg-purple/90 transition-colors"
+                  className="px-6 py-2 bg-purple text-white font-medium rounded-lg border-2 border-black hover:bg-opacity-90 transition-colors"
                 >
                   Apply
                 </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        {/* ✅ NEW: Time-Based Charts */}
-        {timeSeriesData.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            {/* Opens Over Time */}
-            <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
-              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <TrendingUp size={20} className="text-purple" />
-                Opens Over Time
-              </h3>
-              <div className="h-64">
-                <TimeSeriesChart
-                  data={timeSeriesData}
-                  dataKey="opens"
-                  color="#57377d"
-                  formatDate={formatDateForDisplay}
-                />
-              </div>
+        {/* Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+          {/* Opens Over Time */}
+          <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <TrendingUp size={20} className="text-purple" />
+              Opens Over Time
+            </h3>
+            <div className="h-64">
+              <TimeSeriesChart
+                data={timeSeriesData}
+                dataKey="opens"
+                color="#57377d"
+                formatDate={formatDateForDisplay}
+              />
             </div>
+          </div>
 
-            {/* Clicks Over Time */}
-            <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
-              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <MousePointerClick size={20} className="text-gold" />
-                Clicks Over Time
-              </h3>
-              <div className="h-64">
-                <TimeSeriesChart
-                  data={timeSeriesData}
-                  dataKey="clicks"
-                  color="#f3ba42"
-                  formatDate={formatDateForDisplay}
-                />
-              </div>
+          {/* Clicks Over Time */}
+          <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <MousePointerClick size={20} className="text-gold" />
+              Clicks Over Time
+            </h3>
+            <div className="h-64">
+              <TimeSeriesChart
+                data={timeSeriesData}
+                dataKey="clicks"
+                color="#f3ba42"
+                formatDate={formatDateForDisplay}
+              />
             </div>
           </div>
-        ) : (
-          <div className="bg-white rounded-lg border-2 border-black shadow-lg p-12 mb-8 text-center">
-            <BarChart size={48} className="mx-auto text-gray-300 mb-4" />
-            <p className="text-gray-600 mb-2 font-medium">No analytics data available</p>
-            <p className="text-sm text-gray-500">
-              Send some campaigns to see your analytics here
-            </p>
-          </div>
-        )}
+        </div>
 
         {/* Recent Campaigns */}
-        <div className="bg-white rounded-lg border-2 border-black shadow-lg overflow-hidden">
-          <div className="p-6 bg-gold border-b-2 border-black">
-            <h2 className="text-xl font-serif font-bold">Recent Campaigns</h2>
-          </div>
-
-          {loading ? (
-            <div className="p-8 text-center text-gray-500">
-              Loading campaigns...
-            </div>
-          ) : stats.recentCampaigns.length === 0 ? (
-            <div className="p-8 text-center">
-              <Mail size={48} className="mx-auto text-gray-300 mb-4" />
+        <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
+          <h2 className="text-xl font-bold mb-4">Recent Campaigns</h2>
+          
+          {stats.recentCampaigns.length === 0 ? (
+            <div className="text-center py-12">
+              <Mail size={48} className="mx-auto text-gray-400 mb-4" />
               <p className="text-gray-600 mb-4">No campaigns yet</p>
-              <Button
-                onClick={() => navigate('/app/campaigns')}
-                variant="primary"
-                icon={PlayCircle}
+              <button
+                onClick={() => navigate('/campaigns/new')}
+                className="px-6 py-3 bg-purple text-white font-medium rounded-lg border-2 border-black hover:bg-opacity-90 transition-colors"
               >
-                Create Your First Campaign
-              </Button>
+                Create First Campaign
+              </button>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Campaign Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Recipients
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Sent Date
-                    </th>
+                <thead>
+                  <tr className="border-b-2 border-black">
+                    <th className="text-left py-3 px-4 font-semibold">Name</th>
+                    <th className="text-left py-3 px-4 font-semibold">Status</th>
+                    <th className="text-left py-3 px-4 font-semibold">Recipients</th>
+                    <th className="text-left py-3 px-4 font-semibold">Sent Date</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody>
                   {stats.recentCampaigns.map((campaign) => (
                     <tr
                       key={campaign.id}
-                      className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => navigate(`/app/campaigns/${campaign.id}`)}
+                      onClick={() => navigate(`/campaigns/${campaign.id}`)}
+                      className="border-b border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors"
                     >
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="font-medium text-gray-900">
-                          {campaign.name}
-                        </div>
+                      <td className="py-3 px-4 font-medium">{campaign.name}</td>
+                      <td className="py-3 px-4">
+                        <span
+                          className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            campaign.status === 'sent'
+                              ? 'bg-green-100 text-green-800'
+                              : campaign.status === 'draft'
+                              ? 'bg-gray-100 text-gray-800'
+                              : campaign.status === 'scheduled'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}
+                        >
+                          {campaign.status}
+                        </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <StatusBadge status={campaign.status} />
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {campaign.recipients_count || 0}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="py-3 px-4">{campaign.recipients_count || 0}</td>
+                      <td className="py-3 px-4">
                         {campaign.sent_at
                           ? new Date(campaign.sent_at).toLocaleDateString()
                           : '-'}
@@ -714,21 +606,12 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-
-      {/* Quick Start Modal */}
-      {showQuickStart && !quickStartDismissed && (
-        <QuickStartGuide
-          onClose={() => handleDismissQuickStart(false)}
-          onDismissPermanently={() => handleDismissQuickStart(true)}
-          setupProgress={setupProgress}
-        />
-      )}
     </AppLayout>
   );
 }
 
 // ============================================================================
-// ✅ NEW: TIME SERIES CHART COMPONENT (Using Recharts)
+// TIME SERIES CHART COMPONENT (Using Recharts)
 // ============================================================================
 
 interface TimeSeriesChartProps {
@@ -774,7 +657,10 @@ function TimeSeriesChart({ data, dataKey, color, formatDate }: TimeSeriesChartPr
   if (data.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-gray-400">
-        No data available
+        <div className="text-center">
+          <p className="mb-2">No analytics data available</p>
+          <p className="text-sm">Send some campaigns to see your analytics here</p>
+        </div>
       </div>
     );
   }
@@ -847,273 +733,5 @@ function TimeSeriesChart({ data, dataKey, color, formatDate }: TimeSeriesChartPr
         Total {dataKey === 'opens' ? 'Opens' : 'Clicks'}: {total.toLocaleString()}
       </div>
     </div>
-  );
-}
-
-// ============================================================================
-// ✅ NEW: DATE RANGE BUTTON COMPONENT
-// ============================================================================
-
-interface DateRangeButtonProps {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}
-
-function DateRangeButton({ active, onClick, label }: DateRangeButtonProps) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-        active
-          ? 'bg-purple text-white'
-          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
-// ============================================================================
-// SETUP CHECKLIST ITEM COMPONENT
-// ============================================================================
-
-interface SetupChecklistItemProps {
-  completed: boolean;
-  title: string;
-  onClick: () => void;
-}
-
-function SetupChecklistItem({ completed, title, onClick }: SetupChecklistItemProps) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-3 p-3 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-left"
-    >
-      <div className={`flex-shrink-0 ${completed ? 'text-green-400' : 'text-white/40'}`}>
-        <CheckCircle size={20} fill={completed ? 'currentColor' : 'none'} />
-      </div>
-      <div className="flex-1">
-        <span className="text-white font-medium">{title}</span>
-      </div>
-      <ChevronRight size={16} className="text-white/60" />
-    </button>
-  );
-}
-
-// ============================================================================
-// QUICK START GUIDE MODAL
-// ============================================================================
-
-interface QuickStartGuideProps {
-  onClose: () => void;
-  onDismissPermanently: () => void;
-  setupProgress: SetupProgress;
-}
-
-function QuickStartGuide({ onClose, onDismissPermanently, setupProgress }: QuickStartGuideProps) {
-  const navigate = useNavigate();
-
-  const steps = [
-    {
-      icon: <Globe size={32} />,
-      title: '1. Verify Your Domain',
-      description: 'Set up DNS records to authenticate your sending domain',
-      completed: setupProgress.hasVerifiedDomain,
-      action: () => {
-        onClose();
-        navigate('/app/settings?tab=domains');
-      },
-      actionText: 'Go to Domains',
-    },
-    {
-      icon: <Users size={32} />,
-      title: '2. Add Your Contacts',
-      description: 'Import contacts from CSV or add them manually',
-      completed: setupProgress.hasContacts,
-      action: () => {
-        onClose();
-        navigate('/app/contacts');
-      },
-      actionText: 'Manage Contacts',
-    },
-    {
-      icon: <BookOpen size={32} />,
-      title: '3. Create a Template',
-      description: 'Design beautiful email templates or use our pre-built ones',
-      completed: setupProgress.hasTemplate,
-      action: () => {
-        onClose();
-        navigate('/app/templates');
-      },
-      actionText: 'Browse Templates',
-    },
-    {
-      icon: <Zap size={32} />,
-      title: '4. Send Your First Campaign',
-      description: 'Create and send your first email campaign',
-      completed: setupProgress.hasSentCampaign,
-      action: () => {
-        onClose();
-        navigate('/app/campaigns');
-      },
-      actionText: 'Create Campaign',
-    },
-  ];
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden border-2 border-black">
-        <div className="border-b-2 border-black p-6 bg-gradient-to-r from-purple to-gold/80">
-          <div className="flex items-center justify-between">
-            <div className="text-white">
-              <h2 className="text-2xl font-serif font-bold mb-1">
-                🚀 Quick Start Guide
-              </h2>
-              <p className="text-white/90 text-sm">
-                Follow these steps to get started with Email Wizard
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-white/20 rounded-lg transition-colors text-white"
-            >
-              <X size={24} />
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
-          <div className="space-y-4">
-            {steps.map((step, index) => (
-              <div
-                key={index}
-                className={`border-2 rounded-lg p-6 transition-all ${
-                  step.completed
-                    ? 'border-green-500 bg-green-50'
-                    : 'border-gray-300 bg-white hover:border-purple hover:shadow-md'
-                }`}
-              >
-                <div className="flex items-start gap-4">
-                  <div
-                    className={`flex-shrink-0 p-3 rounded-lg ${
-                      step.completed
-                        ? 'bg-green-500 text-white'
-                        : 'bg-purple/10 text-purple'
-                    }`}
-                  >
-                    {step.completed ? <CheckCircle size={32} /> : step.icon}
-                  </div>
-
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold mb-1">{step.title}</h3>
-                    <p className="text-gray-600 mb-4">{step.description}</p>
-
-                    {!step.completed && (
-                      <button
-                        onClick={step.action}
-                        className="px-4 py-2 bg-purple text-white rounded-lg font-medium hover:bg-purple/90 transition-colors inline-flex items-center gap-2"
-                      >
-                        {step.actionText}
-                        <ChevronRight size={16} />
-                      </button>
-                    )}
-
-                    {step.completed && (
-                      <div className="flex items-center gap-2 text-green-700 font-medium">
-                        <CheckCircle size={16} />
-                        Completed!
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-8 p-6 bg-blue-50 border-2 border-blue-200 rounded-lg">
-            <h3 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
-              <AlertCircle size={20} />
-              Need Help?
-            </h3>
-            <p className="text-sm text-blue-800 mb-3">
-              Check out our comprehensive guides and video tutorials:
-            </p>
-            <ul className="text-sm text-blue-800 space-y-1">
-              <li>• <strong>DNS Setup Guide:</strong> Step-by-step DNS configuration</li>
-              <li>• <strong>Campaign Creation:</strong> Best practices for effective emails</li>
-              <li>• <strong>Contact Management:</strong> Import and organize your audience</li>
-              <li>• <strong>Video Tutorials:</strong> Watch detailed walkthroughs</li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="border-t-2 border-black p-6 bg-gray-50 flex items-center justify-between">
-          <button
-            onClick={onDismissPermanently}
-            className="text-sm text-gray-600 hover:text-gray-900"
-          >
-            Don't show this again
-          </button>
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-purple text-white rounded-lg font-medium hover:bg-purple/90 transition-colors"
-          >
-            Got it!
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// HELPER COMPONENTS
-// ============================================================================
-
-interface StatCardProps {
-  icon: React.ReactNode;
-  title: string;
-  value: string | number;
-  iconColor: string;
-  bgColor: string;
-}
-
-function StatCard({ icon, title, value, iconColor, bgColor }: StatCardProps) {
-  return (
-    <div className="bg-white rounded-lg border-2 border-black shadow-lg p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className={`p-3 rounded-lg ${bgColor}`}>
-          <div className={iconColor}>{icon}</div>
-        </div>
-      </div>
-      <div className="text-2xl font-bold mb-1">{value}</div>
-      <div className="text-sm text-gray-600">{title}</div>
-    </div>
-  );
-}
-
-interface StatusBadgeProps {
-  status: string;
-}
-
-function StatusBadge({ status }: StatusBadgeProps) {
-  const statusConfig = {
-    draft: { label: 'Draft', className: 'bg-gray-100 text-gray-700' },
-    scheduled: { label: 'Scheduled', className: 'bg-blue-100 text-blue-700' },
-    sending: { label: 'Sending', className: 'bg-yellow-100 text-yellow-700' },
-    sent: { label: 'Sent', className: 'bg-green-100 text-green-700' },
-    failed: { label: 'Failed', className: 'bg-red-100 text-red-700' },
-  };
-
-  const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.draft;
-
-  return (
-    <span
-      className={`px-2 py-1 rounded-full text-xs font-medium ${config.className}`}
-    >
-      {config.label}
-    </span>
   );
 }
