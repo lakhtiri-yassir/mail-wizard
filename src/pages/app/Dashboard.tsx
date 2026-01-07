@@ -39,10 +39,10 @@ import {
   BookOpen,
   Zap
 } from 'lucide-react';
-import { AppLayout } from '../components/app/AppLayout';
-import { Button } from '../components/ui/Button';
-import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
+import { AppLayout } from '../../components/app/AppLayout';
+import { Button } from '../../components/ui/Button';
+import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
 interface DashboardStats {
