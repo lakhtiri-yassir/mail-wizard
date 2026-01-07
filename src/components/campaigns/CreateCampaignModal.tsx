@@ -103,6 +103,7 @@ interface CreateCampaignModalProps {
   onClose: () => void;
   onSuccess: (campaign: Campaign) => void;
   shouldLoadTemplate?: boolean;
+  editingCampaign?: Campaign | null;
 }
 
 // ============================================================================
@@ -112,7 +113,8 @@ interface CreateCampaignModalProps {
 export default function CreateCampaignModal({ 
   onClose, 
   onSuccess, 
-  shouldLoadTemplate = false 
+  shouldLoadTemplate = false,
+  editingCampaign = null 
 }: CreateCampaignModalProps) {
   const { user, profile } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
@@ -125,38 +127,70 @@ export default function CreateCampaignModal({
   const [contactsError, setContactsError] = useState<string | null>(null);
   const [contactSearchQuery, setContactSearchQuery] = useState('');
 
+
   const navigate = useNavigate();
   const location = useLocation();
+  const isEditMode = !!editingCampaign;
 
   const username = user?.email?.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
   const defaultDomain = 'mail.mailwizard.io';
 
   // Form data state
-  const [formData, setFormData] = useState<CampaignFormData>({
-    // Step 1
+  // ✅ MODIFIED: Function to get initial form data
+const getInitialFormData = (): CampaignFormData => {
+  if (editingCampaign) {
+    // Pre-populate from existing campaign
+    const recipients = editingCampaign.content?.recipients || {};
+    
+    return {
+      // Step 1
+      name: editingCampaign.name || '',
+      description: editingCampaign.content?.description || '',
+      subject: editingCampaign.subject || '',
+      previewText: editingCampaign.preview_text || '',
+      fromName: editingCampaign.from_name || profile?.full_name || '',
+      fromEmail: editingCampaign.from_email || `${username}@mail.mailwizard.io`,
+      replyTo: editingCampaign.reply_to || user?.email || '',
+
+      // Step 2
+      templateId: editingCampaign.content?.templateId || '',
+      customHtml: editingCampaign.custom_html || editingCampaign.content?.html || null,
+      inputMode: (editingCampaign.custom_html || editingCampaign.content?.html) ? 'custom' : 'template',
+
+      // Step 3
+      sendToMode: recipients.sendToMode || 'all',
+      selectedGroups: new Set(recipients.selectedGroups || []),
+      selectedContacts: new Set(recipients.selectedContacts || []),
+
+      // Step 4
+      scheduleMode: 'draft',
+      scheduledDate: new Date().toISOString().split('T')[0],
+      scheduledTime: '09:00',
+    };
+  }
+
+  // Default form data for new campaigns
+  return {
     name: '',
     description: '',
     subject: '',
     previewText: '',
     fromName: profile?.full_name || '',
-    fromEmail: `${username}@mail.mailwizard.io`,  // ✅ FIX #1: Default sending domain
+    fromEmail: `${username}@mail.mailwizard.io`,
     replyTo: user?.email || '',
-
-    // Step 2
     templateId: '',
     customHtml: null,
     inputMode: 'template',
-
-    // Step 3
     sendToMode: 'all',
     selectedGroups: new Set<string>(),
     selectedContacts: new Set<string>(),
-
-    // Step 4
-    scheduleMode: 'draft',  // ✅ UPDATED: Default to draft
+    scheduleMode: 'draft',
     scheduledDate: new Date().toISOString().split('T')[0],
     scheduledTime: '09:00',
-  });
+  };
+};
+
+const [formData, setFormData] = useState<CampaignFormData>(getInitialFormData());
 
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -174,6 +208,7 @@ export default function CreateCampaignModal({
    */
   const autosaveDraft = useCallback(async () => {
     if (!user) return;
+    if (isEditMode) return;
 
     try {
       const draftData = {
@@ -198,7 +233,7 @@ export default function CreateCampaignModal({
     } catch (error) {
       console.error('❌ Autosave failed:', error);
     }
-  }, [formData, currentStep, user]);
+  }, [formData, currentStep, user, isEditMode]);
 
   /**
    * Manual save draft button handler
@@ -225,23 +260,20 @@ export default function CreateCampaignModal({
    */
   useEffect(() => {
     // Don't autosave on initial load
-    if (currentStep === 0 || !user) return;
+    if (currentStep === 0 || !user || isEditMode) return;
 
     const autosaveTimer = setTimeout(() => {
       autosaveDraft();
-    }, 30000); // 30 seconds
+    }, 10000); // 30 seconds
 
     return () => clearTimeout(autosaveTimer);
-  }, [formData, currentStep, user, autosaveDraft]);
+  }, [formData, currentStep, user, autosaveDraft, isEditMode]);
 
   /**
    * Load draft on component mount
    */
   useEffect(() => {
-    if (!user) return;
-
-    // Don't load if returning from template editor
-    if (shouldLoadTemplate) return;
+  if (!user || shouldLoadTemplate || isEditMode) return; // ✅ Added isEditMode
 
     const loadDraft = () => {
       try {
@@ -278,7 +310,7 @@ export default function CreateCampaignModal({
     };
 
     loadDraft();
-  }, [user, shouldLoadTemplate]);
+  }, [user, shouldLoadTemplate, isEditMode]);
 
 
   // ============================================================================
@@ -744,70 +776,74 @@ sessionStorage.setItem('campaignDraft', JSON.stringify(campaignDraft));
   async function handleCreateCampaign() {
     if (!validateStep(4)) return;
 
-    try {
-      setIsSubmitting(true);
+  try {
+    setIsSubmitting(true);
 
-      // Prepare campaign data
-      const campaignData: any = {
-        user_id: user?.id,
-        name: formData.name.trim(),
-        subject: formData.subject.trim(),
-        preview_text: formData.previewText.trim() || null,
-        from_name: formData.fromName.trim(),
-        from_email: formData.fromEmail.trim(),
-        reply_to: formData.replyTo.trim(),
+    // Prepare campaign data
+    const campaignData: any = {
+      user_id: user?.id,
+      name: formData.name.trim(),
+      subject: formData.subject.trim(),
+      preview_text: formData.previewText.trim() || null,
+      from_name: formData.fromName.trim(),
+      from_email: formData.fromEmail.trim(),
+      reply_to: formData.replyTo.trim(),
+      custom_html: formData.customHtml?.trim() || null,
+      content: {
+        templateId: formData.templateId,
+        description: formData.description.trim(),
+        html: formData.customHtml?.trim() || null,
+        recipients: {
+          sendToMode: formData.sendToMode,
+          selectedGroups: Array.from(formData.selectedGroups),
+          selectedContacts: Array.from(formData.selectedContacts),
+        }
+      },
+      status: formData.scheduleMode === 'now' ? 'sending' 
+            : formData.scheduleMode === 'later' ? 'scheduled' 
+            : 'draft',
+      recipients_count: calculateRecipientCount(),
+      updated_at: new Date().toISOString(),
+    };
 
-        // ✅ FIX #2: Save HTML content to custom_html column
-        custom_html: formData.customHtml?.trim() || null,
+    // Add scheduling if selected
+    if (formData.scheduleMode === 'later') {
+      campaignData.scheduled_at = new Date(`${formData.scheduledDate}T${formData.scheduledTime}`).toISOString();
+    }
 
-        content: {
-          templateId: formData.templateId,
-          description: formData.description.trim(),
-          // ✅ FIX #2: Also save to content.html for backward compatibility
-          html: formData.customHtml?.trim() || null,
-        },
+    let campaign;
 
-        // ✅ FIX #3: Set correct initial status based on schedule mode
-        status: formData.scheduleMode === 'now' ? 'sending' 
-              : formData.scheduleMode === 'later' ? 'scheduled' 
-              : 'draft',
-        
-        recipients_count: calculateRecipientCount(),
-      };
+    if (isEditMode) {
+      // ✅ UPDATE existing campaign
+      console.log('📝 Updating campaign:', editingCampaign.id);
+      
+      const { data, error } = await supabase
+        .from('campaigns')
+        .update(campaignData)
+        .eq('id', editingCampaign.id)
+        .select()
+        .single();
 
-      // Add scheduling if selected
-      if (formData.scheduleMode === 'later') {
-        campaignData.scheduled_at = new Date(`${formData.scheduledDate}T${formData.scheduledTime}`).toISOString();
-      }
-
-      // Create campaign
-      const { data: campaign, error: campaignError } = await supabase
+      if (error) throw error;
+      campaign = data;
+      
+      toast.success('✅ Campaign updated successfully!');
+    } else {
+      // ✅ INSERT new campaign
+      console.log('✨ Creating new campaign');
+      
+      const { data, error } = await supabase
         .from('campaigns')
         .insert(campaignData)
         .select()
         .single();
 
-      if (campaignError) throw campaignError;
-
-      // ✅ FIX #3: Store recipient selection in campaign content
-      const recipientData = {
-        sendToMode: formData.sendToMode,
-        selectedGroups: Array.from(formData.selectedGroups),
-        selectedContacts: Array.from(formData.selectedContacts),
-      };
-
-      // Update campaign with recipient info
-      const { error: updateError } = await supabase
-        .from('campaigns')
-        .update({
-          content: {
-            ...campaignData.content,
-            recipients: recipientData,
-          }
-        })
-        .eq('id', campaign.id);
-
-      if (updateError) throw updateError;
+      if (error) throw error;
+      campaign = data;
+      
+      toast.success('✅ Campaign created successfully!');
+      clearDraft(); // Only clear draft for new campaigns
+    }
 
       // ✅ FIX: Actually send emails when "Send Now" is selected
 if (formData.scheduleMode === 'now') {
@@ -841,8 +877,10 @@ if (formData.scheduleMode === 'now') {
         );
       }
     }
+    
 
     console.log(`📊 Sending to ${recipientList.length} recipients`);
+    
 
     let successCount = 0;
     let failCount = 0;
@@ -963,8 +1001,17 @@ onClose();
       <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="border-b-2 border-black p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-serif font-bold">Create Campaign</h2>
+  <div className="flex items-center justify-between">
+    <div>
+      <h2 className="text-3xl font-serif font-bold">
+        {isEditMode ? 'Edit Campaign' : 'Create Campaign'}
+      </h2>
+      {isEditMode && (
+        <p className="text-sm text-gray-600 mt-1">
+          Editing: {editingCampaign.name}
+        </p>
+      )}
+    </div>
             <button
               onClick={onClose}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -1077,15 +1124,16 @@ onClose();
               </Button>
 
               {/* ✅ NEW: Manual Save Draft Button */}
-              <Button
-                variant="secondary"
-                onClick={handleSaveDraft}
-                icon={Save}
-                className="text-sm"
-              >
-                Save Draft
-              </Button>
-            </div>
+              {!isEditMode && ( // ✅ Only show for new campaigns
+  <Button
+    variant="secondary"
+    onClick={handleSaveDraft}
+    icon={Save}
+    className="text-sm"
+  >
+    Save Draft
+  </Button>
+)}
 
             <div className="flex gap-3">
               {currentStep < 4 ? (
@@ -1099,17 +1147,18 @@ onClose();
                 </Button>
               ) : (
                 <Button
-                  variant="primary"
-                  onClick={handleCreateCampaign}
-                  loading={isSubmitting}
-                  disabled={isSubmitting}
-                  icon={Mail}
-                >
-                  {/* ✅ UPDATED: Button text based on schedule mode */}
-                  {formData.scheduleMode === 'now' ? 'Create & Prepare to Send' 
-                    : formData.scheduleMode === 'later' ? 'Schedule Campaign'
-                    : 'Save as Draft'}
-                </Button>
+  variant="primary"
+  onClick={handleCreateCampaign}
+  loading={isSubmitting}
+  disabled={isSubmitting}
+  icon={Mail}
+>
+  {isEditMode 
+    ? 'Update Campaign' // ✅ Show "Update" when editing
+    : formData.scheduleMode === 'now' ? 'Create & Prepare to Send' 
+    : formData.scheduleMode === 'later' ? 'Schedule Campaign'
+    : 'Save as Draft'}
+</Button>
               )}
             </div>
           </div>

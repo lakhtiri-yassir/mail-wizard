@@ -82,6 +82,7 @@ export function Campaigns() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [editingDraftCampaign, setEditingDraftCampaign] = useState<Campaign | null>(null);
   const [deletingCampaign, setDeletingCampaign] = useState<Campaign | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [sendingNow, setSendingNow] = useState<string | null>(null);
@@ -194,7 +195,20 @@ useEffect(() => {
  * Handle edit campaign
  */
 const handleEdit = (campaign: Campaign) => {
-  setEditingCampaign(campaign);
+  console.log('📝 Edit clicked for campaign:', campaign.name, 'Status:', campaign.status);
+  
+  if (campaign.status === 'draft') {
+    // ✅ Route draft campaigns to full CreateCampaignModal
+    console.log('✅ Opening CreateCampaignModal for draft campaign');
+    setEditingDraftCampaign(campaign);
+  } else if (campaign.status === 'scheduled') {
+    // ✅ Keep existing behavior for scheduled campaigns
+    console.log('✅ Opening EditCampaignModal for scheduled campaign');
+    setEditingCampaign(campaign);
+  } else {
+    // Sent campaigns should not be editable
+    toast.error('Cannot edit campaigns that have already been sent');
+  }
 };
 
 /**
@@ -1150,6 +1164,21 @@ const handleSendNow = async (campaign: Campaign) => {
             }}
           />
         )}
+        {/* ✅ NEW: CreateCampaignModal in EDIT MODE for draft campaigns */}
+{editingDraftCampaign && (
+  <CreateCampaignModal
+    key={`edit-${editingDraftCampaign.id}`}
+    editingCampaign={editingDraftCampaign}
+    onClose={() => {
+      setEditingDraftCampaign(null);
+    }}
+    onSuccess={(campaign) => {
+      setEditingDraftCampaign(null);
+      fetchCampaigns();
+      toast.success("Campaign updated successfully!");
+    }}
+  />
+)}
 
         {/* Send Campaign Modal */}
         {showSendModal && selectedCampaign && (
