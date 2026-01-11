@@ -146,27 +146,47 @@ Deno.serve(async (req: Request) => {
       const updatedDnsRecords = { ...domain.dns_records };
       const results = validationResult.validation_results;
 
-      // Update validation status for each DNS record
+      console.log('🔄 Updating DNS record validation status:');
+
+      // Update validation status for each DNS record type SendGrid returns
+      
+      // Mail CNAME
       if (results.mail_cname && updatedDnsRecords.mail_cname) {
         updatedDnsRecords.mail_cname.valid = results.mail_cname.valid;
         console.log(`  mail_cname: ${results.mail_cname.valid ? '✅' : '❌'}`);
       }
 
+      // Mail Server (MX record) - THIS WAS MISSING!
+      if (results.mail_server && updatedDnsRecords.mail_server) {
+        updatedDnsRecords.mail_server.valid = results.mail_server.valid;
+        console.log(`  mail_server: ${results.mail_server.valid ? '✅' : '❌'}`);
+      }
+
+      // DKIM1
       if (results.dkim1 && updatedDnsRecords.dkim1) {
         updatedDnsRecords.dkim1.valid = results.dkim1.valid;
         console.log(`  dkim1: ${results.dkim1.valid ? '✅' : '❌'}`);
       }
 
+      // DKIM2
       if (results.dkim2 && updatedDnsRecords.dkim2) {
         updatedDnsRecords.dkim2.valid = results.dkim2.valid;
         console.log(`  dkim2: ${results.dkim2.valid ? '✅' : '❌'}`);
       }
 
+      // Single DKIM (alternative format) - THIS WAS MISSING!
+      if (results.dkim && updatedDnsRecords.dkim) {
+        updatedDnsRecords.dkim.valid = results.dkim.valid;
+        console.log(`  dkim: ${results.dkim.valid ? '✅' : '❌'}`);
+      }
+
+      // SPF
       if (results.spf && updatedDnsRecords.spf) {
         updatedDnsRecords.spf.valid = results.spf.valid;
         console.log(`  spf: ${results.spf.valid ? '✅' : '❌'}`);
       }
 
+      // Subdomain SPF
       if (results.subdomain_spf && updatedDnsRecords.subdomain_spf) {
         updatedDnsRecords.subdomain_spf.valid = results.subdomain_spf.valid;
         console.log(`  subdomain_spf: ${results.subdomain_spf.valid ? '✅' : '❌'}`);
