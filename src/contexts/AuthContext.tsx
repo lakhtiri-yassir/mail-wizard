@@ -2,9 +2,9 @@
  * Authentication Context
  * 
  * Provides authentication state and methods throughout the application.
- * Handles user signup, login, logout, and session management.
+ * Handles user signup, login, logout, session management, and password reset.
  * 
- * FIX APPLIED: Automatic login after signup
+ * UPDATED: Added password reset functionality
  */
 
 import { createContext, useContext, useEffect, useState } from 'react';
@@ -22,6 +22,14 @@ interface Profile {
   created_at: string;
 }
 
+interface PasswordRequirements {
+  minLength: boolean;
+  hasUppercase: boolean;
+  hasLowercase: boolean;
+  hasNumber: boolean;
+  hasSpecial: boolean;
+}
+
 interface AuthContextType {
   user: User | null;
   profile: Profile | null;
@@ -30,6 +38,9 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  resetPassword: (newPassword: string) => Promise<void>;
+  validatePasswordStrength: (password: string) => PasswordRequirements;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -98,15 +109,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   /**
-   * Sign Up Function (FIXED)
+   * Sign Up Function
    * 
    * Creates a new user account and automatically logs them in.
-   * 
-   * Flow:
-   * 1. Create account with Supabase Auth
-   * 2. Automatically sign in with the same credentials
-   * 3. Fetch user profile
-   * 4. Redirect to dashboard
    */
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
@@ -226,6 +231,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  /**
+   * Request Password Reset
+   * 
+   * Sends a password reset email to the user.
+   */
+  const requestPasswordReset = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) {
+      throw error;
+    }
+  };
+
+  /**
+   * Reset Password
+   * 
+   * Updates the user's password with a new password.
+   */
+  const resetPassword = async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (error) {
+      throw error;
+    }
+  };
+
+  /**
+   * Validate Password Strength
+   * 
+   * Checks if password meets all requirements.
+   */
+  const validatePasswordStrength = (password: string): PasswordRequirements => {
+    return {
+      minLength: password.length >= 8,
+      hasUppercase: /[A-Z]/.test(password),
+      hasLowercase: /[a-z]/.test(password),
+      hasNumber: /[0-9]/.test(password),
+      hasSpecial: /[!@#$%^&*]/.test(password),
+    };
+  };
+
   const value = {
     user,
     profile,
@@ -234,6 +284,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signIn,
     signOut,
     refreshProfile,
+    requestPasswordReset,
+    resetPassword,
+    validatePasswordStrength,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

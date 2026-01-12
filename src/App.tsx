@@ -5,6 +5,12 @@ import { AdminAuthProvider, useAdminAuth } from './contexts/AdminAuthContext';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
+
+// Password Reset Pages - NEW
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import PasswordResetSuccessPage from './pages/PasswordResetSuccessPage';
+
 import Dashboard from './pages/app/Dashboard';
 import { Contacts } from './pages/app/Contacts';
 import { Campaigns } from './pages/app/Campaigns';
@@ -13,7 +19,7 @@ import TemplateEditor from './components/templates/TemplateEditor';
 import { Analytics } from './pages/app/Analytics';
 import { Settings } from './pages/app/Settings';
 import TemplateEdit from './pages/app/TemplateEdit';
-import Domains from './pages/app/settings/Domains'; // ADD THIS IMPORT
+import Domains from './pages/app/settings/Domains';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
@@ -74,15 +80,20 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
 
+            {/* Password Reset Routes - NEW */}
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/password-reset-success" element={<PasswordResetSuccessPage />} />
+
             {/* Protected App Routes */}
             <Route
-  path="/app/templates/edit/:templateId"
-  element={
-    <ProtectedRoute>
-      <TemplateEdit />
-    </ProtectedRoute>
-  }
-/>
+              path="/app/templates/edit/:templateId"
+              element={
+                <ProtectedRoute>
+                  <TemplateEdit />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/app/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/app/contacts" element={<ProtectedRoute><Contacts /></ProtectedRoute>} />
             <Route path="/app/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />
@@ -90,7 +101,7 @@ function App() {
             <Route path="/app/template/editor" element={<ProtectedRoute><TemplateEditor /></ProtectedRoute>} />
             <Route path="/app/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/app/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="/app/settings/domains" element={<ProtectedRoute><Domains /></ProtectedRoute>} /> {/* ADD THIS ROUTE */}
+            <Route path="/app/settings/domains" element={<ProtectedRoute><Domains /></ProtectedRoute>} />
 
             {/* Redirect old routes */}
             <Route path="/app/audience" element={<Navigate to="/app/contacts" replace />} />

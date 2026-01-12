@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { useAuth } from '../contexts/AuthContext';
@@ -68,6 +68,16 @@ export const LoginPage = () => {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+
+            {/* FORGOT PASSWORD LINK - NEW */}
+            <div className="flex items-center justify-between">
+              <Link
+                to="/forgot-password"
+                className="text-sm text-gray-600 hover:text-gray-900 hover:underline"
+              >
+                Forgot your password?
+              </Link>
+            </div>
 
             <Button
               type="submit"
