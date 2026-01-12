@@ -6,11 +6,13 @@ import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 
-// Password Reset Pages - NEW
+// Password Reset Pages
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import PasswordResetSuccessPage from './pages/PasswordResetSuccessPage';
-import EmailConfirmedPage from './pages/EmailConfirmedPage';
+
+// Auth Callback Handler - NEW
+import AuthCallbackHandler from './components/AuthCallbackHandler';
 
 import Dashboard from './pages/app/Dashboard';
 import { Contacts } from './pages/app/Contacts';
@@ -75,20 +77,19 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <AdminAuthProvider>
+          {/* Auth Callback Handler - intercepts hash-based redirects */}
+          <AuthCallbackHandler />
+          
           <Routes>
             {/* Public Routes */}
-            
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
 
-            {/* Password Reset Routes - NEW */}
+            {/* Password Reset Routes */}
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/password-reset-success" element={<PasswordResetSuccessPage />} />
-
-            {/* Email Confirmation Handler */}
-            <Route path="/auth/confirm" element={<EmailConfirmedPage />} />
 
             {/* Protected App Routes */}
             <Route
