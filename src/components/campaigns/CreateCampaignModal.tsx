@@ -304,6 +304,7 @@ const [formData, setFormData] = useState<CampaignFormData>(getInitialFormData())
 
 
 
+
   // ============================================================================
   // DATA LOADING
   // ============================================================================
@@ -393,90 +394,119 @@ useEffect(() => {
       window.history.replaceState({}, document.title);
 
       toast.success('Template customization complete! Now select your recipients.');
+    } else {
+      // Ensure we start at step 1 when not loading template
+      console.log('🆕 Starting fresh at Step 1 - shouldLoadTemplate=false');
+      setCurrentStep(1);
     }
   }, [shouldLoadTemplate, location.state]);
-
-  // Fetch all templates (system + user)
+  
+  // Fetch all templates (system + user custom)
   useEffect(() => {
+    async function fetchAllTemplates() {
+      try {
+        setLoadingTemplates(true);
+        const templates = [...EMAIL_TEMPLATES];
+        
+        if (user) {
+          const { data, error } = await supabase
+            .from('templates')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false });
+          
+          if (error) throw error;
+          if (data) templates.push(...data);
+        }
+        
+        console.log('✅ Loaded templates for campaign:', templates.length);
+        setAllTemplates(templates);
+      } catch (error: any) {
+        console.error('❌ Failed to fetch templates:', error);
+        toast.error('Failed to load templates');
+      } finally {
+        setLoadingTemplates(false);
+      }
+    }
+    
     fetchAllTemplates();
   }, [user]);
 
-  async function fetchAllTemplates() {
-    try {
-      setLoadingTemplates(true);
+  /**
+   * ✅ FIX 4: Fetch contacts specifically when reaching Step 3
+   * This ensures contacts are loaded fresh and visible
+   */
+  useEffect(() => {
+    const fetchContactsForStep3 = async () => {
+      // Only fetch when on Step 3 and user is logged in
+      if (currentStep !== 3 || !user) return;
       
-      // Fetch user templates
-      const { data: userTemplates, error } = await supabase
-        .from('templates')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
+      console.log('📋 Fetching contacts for Step 3...');
+      setContactsLoading(true);
+      setContactsError(null);
 
-      if (error) throw error;
+      try {
+        const { data, error } = await supabase
+          .from('contacts')
+          .select('*')
+          .eq('user_id', user.id)
+          .in('status', ['active', 'subscribed'])
+          .order('created_at', { ascending: false });
 
-      // Combine system templates + user templates
-      const combined = [
-        ...EMAIL_TEMPLATES.map(t => ({
-          ...t,
-          is_locked: true,
-          user_id: null,
-        })),
-        ...(userTemplates || []),
-      ];
+        if (error) throw error;
 
-      setAllTemplates(combined);
-    } catch (error: any) {
-      console.error('Failed to load templates:', error);
-      toast.error('Failed to load templates');
-    } finally {
-      setLoadingTemplates(false);
-    }
-  }
+        console.log(`✅ Loaded ${data?.length || 0} contacts for Step 3`);
+        setContacts(data || []);
+        
+        if (data && data.length === 0) {
+          setContactsError('No contacts found. Add contacts before creating campaigns.');
+        }
+
+      } catch (error: any) {
+        console.error('❌ Failed to fetch contacts:', error);
+        setContactsError('Failed to load contacts. Please try again.');
+        toast.error('Could not load contacts');
+      } finally {
+        setContactsLoading(false);
+      }
+    };
+
+    fetchContactsForStep3();
+  }, [currentStep, user]);
 
   async function loadContactsAndGroups() {
-    if (!user) return;
-
-    setContactsLoading(true);
-    setContactsError(null);
-
     try {
-      // Load contacts
+      setLoadingData(true);
+
       const { data: contactsData, error: contactsError } = await supabase
         .from('contacts')
         .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .eq('user_id', user?.id)
+        .in('status', ['active']);
 
       if (contactsError) throw contactsError;
-      setContacts(contactsData || []);
 
-      // Load groups
       const { data: groupsData, error: groupsError } = await supabase
         .from('contact_groups')
         .select('*')
-        .eq('user_id', user.id)
-        .order('name', { ascending: true });
+        .eq('user_id', user?.id)
+        .order('name');
 
       if (groupsError) throw groupsError;
-      setGroups(groupsData || []);
 
-      // Load verified domains
-      const { data: domainsData, error: domainsError } = await supabase
+      const { data: domainsData } = await supabase
         .from('sending_domains')
-        .select('id, domain, verification_status')
-        .eq('user_id', user.id)
-        .eq('verification_status', 'verified')
-        .order('is_default', { ascending: false });
+        .select('id, domain, verified')
+        .eq('user_id', user?.id)
+        .eq('verification_status', true);
 
-      if (domainsError) throw domainsError;
+      setContacts(contactsData || []);
+      setGroups(groupsData || []);
       setVerifiedDomains(domainsData || []);
-
     } catch (error: any) {
-      console.error('Error loading data:', error);
-      setContactsError('Failed to load contacts and groups');
+      console.error('Failed to load data:', error);
       toast.error('Failed to load contacts and groups');
     } finally {
-      setContactsLoading(false);
       setLoadingData(false);
     }
   }
@@ -485,111 +515,123 @@ useEffect(() => {
   // FORM HANDLERS
   // ============================================================================
 
+  /**
+   * Update form field value
+   */
   function updateField(field: keyof CampaignFormData, value: any) {
     setFormData(prev => ({ ...prev, [field]: value }));
+    // Clear error for this field
     if (errors[field]) {
       setErrors(prev => {
-        const next = { ...prev };
-        delete next[field];
-        return next;
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
       });
     }
   }
 
+  /**
+   * Toggle group selection
+   */
   function toggleGroup(groupId: string) {
     setFormData(prev => {
-      const next = new Set(prev.selectedGroups);
-      if (next.has(groupId)) {
-        next.delete(groupId);
+      const newGroups = new Set(prev.selectedGroups);
+      if (newGroups.has(groupId)) {
+        newGroups.delete(groupId);
       } else {
-        next.add(groupId);
+        newGroups.add(groupId);
       }
-      return { ...prev, selectedGroups: next };
+      return { ...prev, selectedGroups: newGroups };
     });
   }
 
+  /**
+   * Toggle contact selection
+   */
   function toggleContact(contactId: string) {
     setFormData(prev => {
-      const next = new Set(prev.selectedContacts);
-      if (next.has(contactId)) {
-        next.delete(contactId);
+      const newContacts = new Set(prev.selectedContacts);
+      if (newContacts.has(contactId)) {
+        newContacts.delete(contactId);
       } else {
-        next.add(contactId);
+        newContacts.add(contactId);
       }
-      return { ...prev, selectedContacts: next };
+      return { ...prev, selectedContacts: newContacts };
     });
   }
 
+  /**
+   * Select/deselect all contacts
+   */
   function toggleAllContacts() {
-    setFormData(prev => {
-      if (prev.selectedContacts.size === contacts.length) {
-        return { ...prev, selectedContacts: new Set() };
-      } else {
-        return { ...prev, selectedContacts: new Set(contacts.map(c => c.id)) };
-      }
-    });
-  }
-
-  function calculateRecipientCount(): number {
-    if (formData.sendToMode === 'all') {
-      return contacts.filter(c => c.status === 'active').length;
-    } else if (formData.sendToMode === 'contacts') {
-      return Array.from(formData.selectedContacts).filter(id => 
-        contacts.find(c => c.id === id && c.status === 'active')
-      ).length;
-    } else if (formData.sendToMode === 'groups') {
-      // This is an approximation - actual count would require joining tables
-      return groups
-        .filter(g => formData.selectedGroups.has(g.id))
-        .reduce((sum, g) => sum + (g.contact_count || 0), 0);
+    if (formData.selectedContacts.size === contacts.length) {
+      setFormData(prev => ({ ...prev, selectedContacts: new Set() }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        selectedContacts: new Set(contacts.map(c => c.id))
+      }));
     }
-    return 0;
   }
 
   // ============================================================================
   // VALIDATION
   // ============================================================================
 
+  /**
+   * Validate current step
+   */
   function validateStep(step: number): boolean {
     const newErrors: Record<string, string> = {};
 
     if (step === 1) {
-      // Campaign details validation
+      // Campaign Details
       if (!formData.name.trim()) {
         newErrors.name = 'Campaign name is required';
+      } else if (formData.name.length < 3) {
+        newErrors.name = 'Campaign name must be at least 3 characters';
+      } else if (formData.name.length > 100) {
+        newErrors.name = 'Campaign name must be less than 100 characters';
       }
+
       if (!formData.subject.trim()) {
         newErrors.subject = 'Subject line is required';
+      } else if (formData.subject.length < 3) {
+        newErrors.subject = 'Subject line must be at least 3 characters';
+      } else if (formData.subject.length > 200) {
+        newErrors.subject = 'Subject line must be less than 200 characters';
       }
+
+      if (!formData.fromEmail.trim()) {
+        newErrors.fromEmail = 'From email is required';
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.fromEmail)) {
+        newErrors.fromEmail = 'Invalid email format';
+      }
+
       if (!formData.fromName.trim()) {
         newErrors.fromName = 'From name is required';
       }
-      if (!formData.fromEmail.trim()) {
-        newErrors.fromEmail = 'From email is required';
+
+      if (formData.description && formData.description.length > 500) {
+        newErrors.description = 'Description must be less than 500 characters';
       }
-      if (!formData.replyTo.trim()) {
-        newErrors.replyTo = 'Reply-to email is required';
+    }
+
+    if (step === 2) {
+      // Template Selection or Custom HTML
+      // Note: Validation handled in handleNext for step 2 due to dual-path logic
+    }
+
+    if (step === 3) {
+      // Recipients
+      const recipientCount = calculateRecipientCount();
+      if (recipientCount === 0) {
+        newErrors.recipients = 'Please select at least one recipient';
       }
-    } else if (step === 2) {
-      // Template validation
-      if (formData.inputMode === 'custom') {
-        if (!formData.customHtml || formData.customHtml.trim().length === 0) {
-          newErrors.customHtml = 'HTML code is required';
-        }
-      } else if (formData.inputMode === 'template') {
-        if (!formData.templateId) {
-          newErrors.templateId = 'Please select a template';
-        }
-      }
-    } else if (step === 3) {
-      // Recipients validation
-      if (formData.sendToMode === 'groups' && formData.selectedGroups.size === 0) {
-        newErrors.recipients = 'Please select at least one group';
-      } else if (formData.sendToMode === 'contacts' && formData.selectedContacts.size === 0) {
-        newErrors.recipients = 'Please select at least one contact';
-      }
-    } else if (step === 4) {
-      // Schedule validation
+    }
+
+    if (step === 4) {
+      // Schedule
       if (formData.scheduleMode === 'later') {
         if (!formData.scheduledDate) {
           newErrors.scheduledDate = 'Please select a date';
@@ -664,9 +706,9 @@ sessionStorage.setItem('campaignDraft', JSON.stringify(campaignDraft));
   const saved = sessionStorage.getItem('campaignDraft');
   console.log('✅ CampaignDraft saved, verification:', saved ? 'Success' : 'Failed');
   
-  // Navigate to template editor with template ID
-  console.log('🔀 Navigating to template editor with ID:', formData.templateId);
-  navigate(`/app/template-editor?templateId=${formData.templateId}&returnToCampaign=true`);
+  // Navigate to template editor with campaign context
+  console.log('🔙 Navigating to template editor with templateId:', formData.templateId);
+  navigate(`/app/template/editor?templateId=${formData.templateId}&returnToCampaign=true`);
   return;
 }
     } else if (currentStep === 3) {
@@ -676,15 +718,44 @@ sessionStorage.setItem('campaignDraft', JSON.stringify(campaignDraft));
       }
       setCurrentStep(4);
     }
+
+    setErrors({});
   }
 
   /**
    * Go to previous step
    */
   function handleBack() {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
+    setCurrentStep(prev => prev - 1);
+    setErrors({});
+  }
+
+  // ============================================================================
+  // RECIPIENT CALCULATION
+  // ============================================================================
+
+  /**
+   * Calculate total recipient count
+   */
+  function calculateRecipientCount(): number {
+    if (formData.sendToMode === 'all') {
+      return contacts.length;
     }
+
+    if (formData.sendToMode === 'groups') {
+      // Get unique contacts from selected groups
+      const groupIds = Array.from(formData.selectedGroups);
+      const totalCount = groups
+        .filter(g => groupIds.includes(g.id))
+        .reduce((sum, g) => sum + g.contact_count, 0);
+      return totalCount;
+    }
+
+    if (formData.sendToMode === 'contacts') {
+      return formData.selectedContacts.size;
+    }
+
+    return 0;
   }
 
   // ============================================================================
@@ -692,44 +763,35 @@ sessionStorage.setItem('campaignDraft', JSON.stringify(campaignDraft));
   // ============================================================================
 
   /**
-   * Create campaign with full validation
+   * Create campaign in database
    */
   async function handleCreateCampaign() {
-    if (!user) {
-      toast.error('You must be logged in to create campaigns');
-      return;
-    }
+    if (!validateStep(4)) return;
 
-    // Validate current step before proceeding
-    if (!validateStep(currentStep)) {
-      return;
-    }
+  try {
+    setIsSubmitting(true);
 
-    try {
-      setIsSubmitting(true);
-
-      // Build campaign data
-      const campaignData: any = {
-        user_id: user.id,
-        name: formData.name.trim(),
-        subject: formData.subject.trim(),
-        preview_text: formData.previewText?.trim() || null,
-        from_name: formData.fromName.trim(),
-        from_email: formData.fromEmail.trim(),
-        reply_to: formData.replyTo.trim(),
-        custom_html: formData.customHtml?.trim() || null,
-        content: {
-          templateId: formData.templateId || '',
-          description: formData.description?.trim() || '',
-          html: formData.customHtml?.trim() || null,
-          recipients: {
-            sendToMode: formData.sendToMode,
-            selectedGroups: Array.from(formData.selectedGroups),
-            selectedContacts: Array.from(formData.selectedContacts),
-          },
-        },
-        status: formData.scheduleMode === 'now' 
-            ? 'sending' 
+    // Prepare campaign data
+    const campaignData: any = {
+      user_id: user?.id,
+      name: formData.name.trim(),
+      subject: formData.subject.trim(),
+      preview_text: formData.previewText.trim() || null,
+      from_name: formData.fromName.trim(),
+      from_email: formData.fromEmail.trim(),
+      reply_to: formData.replyTo.trim(),
+      custom_html: formData.customHtml?.trim() || null,
+      content: {
+        templateId: formData.templateId,
+        description: formData.description.trim(),
+        html: formData.customHtml?.trim() || null,
+        recipients: {
+          sendToMode: formData.sendToMode,
+          selectedGroups: Array.from(formData.selectedGroups),
+          selectedContacts: Array.from(formData.selectedContacts),
+        }
+      },
+      status: formData.scheduleMode === 'now' ? 'sending' 
             : formData.scheduleMode === 'later' ? 'scheduled' 
             : 'draft',
       recipients_count: calculateRecipientCount(),
@@ -862,21 +924,22 @@ if (formData.scheduleMode === 'now') {
           console.log(`✅ Sent to ${recipient.email}`);
           successCount++;
         }
+
+        // Update progress every 5 emails
+        if ((i + 1) % 5 === 0 || i === recipientList.length - 1) {
+          toast.loading(
+            `Sending... ${successCount + failCount}/${recipientList.length}`,
+            { id: sendToastId }
+          );
+        }
+
       } catch (error) {
         console.error(`❌ Error sending to ${recipient.email}:`, error);
         failCount++;
       }
-
-      // Update progress toast every 10 emails
-      if ((i + 1) % 10 === 0 || i === recipientList.length - 1) {
-        toast.loading(
-          `Sending emails... ${i + 1}/${recipientList.length}`,
-          { id: sendToastId }
-        );
-      }
     }
 
-    // Update campaign status to sent
+    // Update campaign to "sent" status
     await supabase
       .from("campaigns")
       .update({
@@ -885,21 +948,27 @@ if (formData.scheduleMode === 'now') {
       })
       .eq("id", campaign.id);
 
-    console.log(`✅ Campaign sending complete: ${successCount} sent, ${failCount} failed`);
-    toast.success(
-      `Campaign sent! ${successCount} emails delivered${failCount > 0 ? `, ${failCount} failed` : ''}`,
-      { id: sendToastId }
-    );
-  } catch (error: any) {
-    console.error('❌ Error during sending:', error);
-    toast.error('Failed to send emails', { id: sendToastId });
-  }
-}
+    // Show final result
+    if (failCount === 0) {
+      toast.success(
+        `✅ Campaign sent to all ${successCount} recipients!`,
+        { id: sendToastId, duration: 5000 }
+      );
+    } else {
+      toast.success(
+        `⚠️ Sent to ${successCount} recipients, ${failCount} failed`,
+        { id: sendToastId, duration: 5000 }
+      );
+    }
 
-toast.success(
-  formData.scheduleMode === 'now' 
-    ? 'Campaign created and queued for sending!' 
-    : formData.scheduleMode === 'later' 
+  } catch (error: any) {
+    console.error('❌ Error sending campaign:', error);
+    toast.error('Campaign created but failed to send: ' + error.message, { id: sendToastId });
+  }
+} else {
+  // For scheduled or draft campaigns, just show success message
+  toast.success(
+    formData.scheduleMode === 'later'
       ? 'Campaign scheduled successfully!'
       : 'Campaign saved as draft!'
   );
@@ -944,7 +1013,7 @@ onClose();
           </div>
 
           {/* Progress Steps */}
-          <div className="flex items-center gap-2 mt-6">
+          <div className="flex items-center gap-2">
             {[1, 2, 3, 4].map((step) => (
               <div key={step} className="flex items-center flex-1">
                 <div
@@ -974,19 +1043,11 @@ onClose();
           </div>
 
           {/* Step Labels */}
-          <div className="flex items-center justify-between mt-2">
-            <span className="text-xs font-medium text-gray-600 flex-1 text-center">
-              Details
-            </span>
-            <span className="text-xs font-medium text-gray-600 flex-1 text-center">
-              Template
-            </span>
-            <span className="text-xs font-medium text-gray-600 flex-1 text-center">
-              Recipients
-            </span>
-            <span className="text-xs font-medium text-gray-600 flex-1 text-center">
-              Schedule
-            </span>
+          <div className="flex items-center gap-2 mt-2">
+            <div className="flex-1 text-xs font-medium text-center">Details</div>
+            <div className="flex-1 text-xs font-medium text-center">Template</div>
+            <div className="flex-1 text-xs font-medium text-center">Recipients</div>
+            <div className="flex-1 text-xs font-medium text-center">Schedule</div>
           </div>
         </div>
 
@@ -1006,10 +1067,11 @@ onClose();
           )}
 
           {currentStep === 2 && (
-            <Step2Template
+            <Step2TemplateSelection
               formData={formData}
               errors={errors}
               updateField={updateField}
+              userPlan={profile?.plan_type || 'free'}
               allTemplates={allTemplates}
               loadingTemplates={loadingTemplates}
               onSaveDraft={handleSaveDraft}
@@ -1018,7 +1080,7 @@ onClose();
           )}
 
           {currentStep === 3 && (
-            <Step3Recipients
+            <Step3RecipientSelection
               formData={formData}
               contacts={contacts}
               groups={groups}
@@ -1050,8 +1112,8 @@ onClose();
 
         {/* Footer */}
         <div className="border-t-2 border-black p-6">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex justify-between">
+            <div className="flex gap-3">
               <Button
                 variant="secondary"
                 onClick={currentStep === 1 ? onClose : handleBack}
@@ -1208,75 +1270,81 @@ function Step1CampaignDetails({
         </label>
         <Input
           type="text"
-          placeholder="This appears below the subject line in inboxes..."
+          placeholder="Text shown in email preview..."
           value={formData.previewText}
           onChange={(e) => updateField('previewText', e.target.value)}
-          error={errors.previewText}
         />
         <p className="text-xs text-gray-500 mt-1">
-          Appears in email previews. {formData.previewText.length}/150 characters
+          This appears next to the subject line in email clients
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            From Name <span className="text-red-500">*</span>
-          </label>
-          <Input
-            type="text"
-            placeholder="Your Name or Company"
-            value={formData.fromName}
-            onChange={(e) => updateField('fromName', e.target.value)}
-            error={errors.fromName}
-          />
-        </div>
+      <div className="border-t pt-6">
+        <h3 className="text-lg font-semibold mb-4">Sender Information</h3>
+      </div>
 
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            From Email <span className="text-red-500">*</span>
-          </label>
-          <div className="flex gap-2">
+      <div>
+        <label className="block text-sm font-medium mb-2">
+          From Name <span className="text-red-500">*</span>
+        </label>
+        <Input
+          type="text"
+          placeholder="Your Company Name"
+          value={formData.fromName}
+          onChange={(e) => updateField('fromName', e.target.value)}
+          error={errors.fromName}
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-2">
+          From Email <span className="text-red-500">*</span>
+        </label>
+        <div className="flex gap-2">
+          <div className="flex-1">
             <Input
               type="text"
               placeholder="username"
               value={localPart}
               onChange={(e) => handleLocalPartChange(e.target.value)}
-              className="flex-1"
               error={errors.fromEmail}
             />
+          </div>
+          <span className="flex items-center text-gray-500 font-medium">@</span>
+          <div className="flex-1">
             <select
               value={selectedDomain}
               onChange={(e) => handleDomainChange(e.target.value)}
-              className="px-3 py-2 border-2 border-black rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple"
+              className="w-full px-4 py-3 border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-purple bg-white"
             >
-              <option value={defaultDomain}>@{defaultDomain}</option>
+              <option value={defaultDomain}>{defaultDomain} (Shared)</option>
               {verifiedDomains.map((domain) => (
                 <option key={domain.id} value={domain.domain}>
-                  @{domain.domain}
+                  {domain.domain} (Verified)
                 </option>
               ))}
             </select>
           </div>
-          <p className="text-xs text-gray-500 mt-1">
-            This will appear as the sender in recipient inboxes
-          </p>
         </div>
+        <p className="text-xs text-gray-500 mt-2">
+          {verifiedDomains.length > 0
+            ? 'Select your verified domain or use the shared Mail Wizard domain'
+            : 'Using shared Mail Wizard domain. Add a custom domain in Settings for better deliverability.'}
+        </p>
       </div>
 
       <div>
         <label className="block text-sm font-medium mb-2">
-          Reply-To Email <span className="text-red-500">*</span>
+          Reply-To Email <span className="text-gray-400">(Optional)</span>
         </label>
         <Input
           type="email"
-          placeholder="replies@yourdomain.com"
+          placeholder="support@yourcompany.com"
           value={formData.replyTo}
           onChange={(e) => updateField('replyTo', e.target.value)}
-          error={errors.replyTo}
         />
         <p className="text-xs text-gray-500 mt-1">
-          Where replies to this campaign will be sent
+          Where replies will be sent (defaults to your account email)
         </p>
       </div>
     </div>
@@ -1286,161 +1354,232 @@ function Step1CampaignDetails({
 /**
  * Step 2: Template Selection
  */
-function Step2Template({
+function Step2TemplateSelection({
   formData,
   errors,
   updateField,
+  userPlan,
   allTemplates,
   loadingTemplates,
-  onSaveDraft,
-  isSubmitting,
 }: {
   formData: CampaignFormData;
   errors: Record<string, string>;
-  updateField: (field: keyof CampaignFormData, value: any) => void;
   allTemplates: any[];
   loadingTemplates: boolean;
-  onSaveDraft: () => void;
-  isSubmitting: boolean;
+  updateField: (field: keyof CampaignFormData, value: any) => void;
+  userPlan: string;
 }) {
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
+  const categories = [
+    { id: 'all', name: 'All Templates' },
+    { id: 'marketing', name: 'Marketing' },
+    { id: 'sales', name: 'Sales' },
+    { id: 'newsletter', name: 'Newsletter' },
+    { id: 'announcement', name: 'Announcement' },
+  ];
+
+  const filteredTemplates = selectedCategory === 'all'
+    ? allTemplates
+    : allTemplates.filter(t => t.category === selectedCategory);
+
+  const isPlusUser = userPlan === 'pro_plus';
+
   return (
     <div className="space-y-6">
-      {/* Step Header with Save Draft Button */}
-      <div className="flex items-start justify-between pb-4 border-b border-gray-200">
-        <div>
-          <h3 className="text-lg font-semibold mb-2">Choose Email Template</h3>
-          <p className="text-gray-600 text-sm">
-            Select a template or provide your own HTML code.
-          </p>
-        </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={onSaveDraft}
-          disabled={isSubmitting}
-          icon={Save}
-        >
-          Save Draft
-        </Button>
+      <div>
+        <h3 className="text-lg font-semibold mb-4">Choose How to Create Your Email</h3>
+        <p className="text-gray-600 text-sm mb-6">
+          Select a template to customize or paste your own HTML code.
+        </p>
       </div>
 
       {/* Input Mode Toggle */}
-      <div className="flex gap-3 p-1 bg-gray-100 rounded-lg">
-        <button
-          onClick={() => updateField('inputMode', 'template')}
-          className={`flex-1 px-4 py-2 rounded-md font-medium transition-all ${
-            formData.inputMode === 'template'
-              ? 'bg-white text-purple shadow-sm'
-              : 'text-gray-600 hover:text-gray-800'
-          }`}
-        >
-          <div className="flex items-center justify-center gap-2">
-            <FileText size={18} />
-            Use Template
-          </div>
-        </button>
+      <div className="grid grid-cols-2 gap-4">
         <button
           onClick={() => updateField('inputMode', 'custom')}
-          className={`flex-1 px-4 py-2 rounded-md font-medium transition-all ${
+          className={`p-6 border-2 rounded-lg transition-all ${
             formData.inputMode === 'custom'
-              ? 'bg-white text-purple shadow-sm'
-              : 'text-gray-600 hover:text-gray-800'
+              ? 'border-purple bg-purple/5'
+              : 'border-gray-300 hover:border-gray-400'
           }`}
         >
-          <div className="flex items-center justify-center gap-2">
-            <Code size={18} />
-            Custom HTML
+          <div className="flex flex-col items-center gap-3">
+            <Code size={32} className={formData.inputMode === 'custom' ? 'text-purple' : 'text-gray-400'} />
+            <div className="text-center">
+              <div className="font-semibold">Custom HTML Code</div>
+              <div className="text-sm text-gray-600 mt-1">
+                Paste your own HTML email code
+              </div>
+            </div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => updateField('inputMode', 'template')}
+          className={`p-6 border-2 rounded-lg transition-all ${
+            formData.inputMode === 'template'
+              ? 'border-purple bg-purple/5'
+              : 'border-gray-300 hover:border-gray-400'
+          }`}
+        >
+          <div className="flex flex-col items-center gap-3">
+            <FileText size={32} className={formData.inputMode === 'template' ? 'text-purple' : 'text-gray-400'} />
+            <div className="text-center">
+              <div className="font-semibold">Select Template</div>
+              <div className="text-sm text-gray-600 mt-1">
+                Choose from our professional templates
+              </div>
+            </div>
           </div>
         </button>
       </div>
 
-      {/* Template Selection */}
-      {formData.inputMode === 'template' && (
-        <div>
-          <label className="block text-sm font-medium mb-3">
-            Select Template <span className="text-red-500">*</span>
-          </label>
-          
-          {loadingTemplates ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="animate-spin text-purple" size={32} />
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
-              {allTemplates.map((template) => (
-                <button
-                  key={template.id}
-                  onClick={() => updateField('templateId', template.id)}
-                  className={`relative p-4 border-2 rounded-lg text-left transition-all ${
-                    formData.templateId === template.id
-                      ? 'border-purple bg-purple/5 ring-2 ring-purple/20'
-                      : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
-                  }`}
-                >
-                  {template.is_locked && (
-                    <div className="absolute top-2 right-2">
-                      <Lock size={16} className="text-gray-400" />
-                    </div>
-                  )}
-                  
-                  <div className="font-semibold mb-1">{template.name}</div>
-                  <div className="text-xs text-gray-500 mb-2">
-                    {template.category || 'General'}
-                  </div>
-                  
-                  {template.description && (
-                    <p className="text-sm text-gray-600 line-clamp-2">
-                      {template.description}
-                    </p>
-                  )}
-                  
-                  {formData.templateId === template.id && (
-                    <div className="absolute top-2 left-2">
-                      <CheckCircle size={20} className="text-purple" />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-          
-          {errors.templateId && (
-            <p className="mt-2 text-sm text-red-600">{errors.templateId}</p>
-          )}
+      {/* Custom HTML Input */}
+      {formData.inputMode === 'custom' && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-semibold mb-2">
+              HTML Email Code <span className="text-red-600">*</span>
+            </label>
+            <textarea
+              value={formData.customHtml || ''}
+              onChange={(e) => {
+                updateField('customHtml', e.target.value);
+                setErrors(prev => {
+                  const newErrors = { ...prev };
+                  delete newErrors.customHtml;
+                  return newErrors;
+                });
+              }}
+              className="w-full h-96 px-4 py-3 border-2 border-black rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple resize-y"
+              placeholder="<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    /* Your email styles */
+  </style>
+</head>
+<body>
+  <!-- Your email content -->
+</body>
+</html>"
+            />
+            {errors.customHtml && (
+              <p className="mt-2 text-sm text-red-600">{errors.customHtml}</p>
+            )}
+            <p className="mt-2 text-xs text-gray-600">
+              Paste your complete HTML email code. Make sure to include inline CSS styles for best email client compatibility.
+            </p>
+          </div>
         </div>
       )}
 
-      {/* Custom HTML Input */}
-      {formData.inputMode === 'custom' && (
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            HTML Code <span className="text-red-500">*</span>
-          </label>
-          <textarea
-            placeholder="Paste your HTML email code here..."
-            value={formData.customHtml || ''}
-            onChange={(e) => updateField('customHtml', e.target.value)}
-            className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple resize-none font-mono text-sm ${
-              errors.customHtml ? 'border-red-500' : 'border-black'
-            }`}
-            rows={12}
-          />
-          {errors.customHtml && (
-            <p className="mt-2 text-sm text-red-600">{errors.customHtml}</p>
+      {/* Template Selection */}
+      {formData.inputMode === 'template' && (
+        <>
+          {/* Category Filter */}
+          <div className="flex flex-wrap gap-2">
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => setSelectedCategory(category.id)}
+                className={`px-4 py-2 rounded-full border transition-all duration-200 ${
+                  selectedCategory === category.id
+                    ? 'bg-gold text-black border-black font-semibold'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-black'
+                }`}
+              >
+                {category.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Template Grid */}
+          {loadingTemplates ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 size={32} className="animate-spin text-purple" />
+            </div>
+          ) : (
+          <div className="grid grid-cols-2 gap-4 max-h-96 overflow-y-auto">
+            {filteredTemplates.map((template) => {
+              const hasPersonalization = template.supportsPersonalization;
+              const isLocked = hasPersonalization && !isPlusUser;
+
+              return (
+                <div
+                  key={template.id}
+                  onClick={() => !isLocked && updateField('templateId', template.id)}
+                  className={`border-2 rounded-lg overflow-hidden transition-all cursor-pointer ${
+                    formData.templateId === template.id
+                      ? 'border-purple shadow-lg'
+                      : 'border-gray-300 hover:border-gray-400'
+                  } ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                >
+                  {/* Template Preview */}
+                  <div className="relative h-32 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
+                    <FileText size={40} className="text-gray-400" />
+                    {isLocked && (
+                      <div className="absolute top-2 right-2 bg-black text-white px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
+                        <Lock size={12} />
+                        Pro Plus
+                      </div>
+                    )}
+                    {formData.templateId === template.id && (
+                      <div className="absolute top-2 left-2 bg-purple text-white p-1 rounded-full">
+                        <Check size={16} />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Template Info */}
+                  <div className="p-3">
+                    <div className="font-semibold text-sm mb-1">{template.name}</div>
+                    <div className="text-xs text-gray-600">{template.category}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
           )}
-          <p className="text-xs text-gray-500 mt-2">
-            Paste your complete HTML email template including all styling.
-          </p>
-        </div>
+
+          {errors.templateId && (
+            <p className="text-sm text-red-600">{errors.templateId}</p>
+          )}
+
+          {/* Template Selected Confirmation */}
+          {formData.templateId && (
+            <div className="mt-6 bg-purple/5 border-2 border-purple rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CheckCircle size={20} className="text-purple" />
+                  <div>
+                    <div className="font-semibold">Template Selected</div>
+                    <div className="text-sm text-gray-600">
+                      You'll customize this template in the next step
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="s"
+                  onClick={() => updateField('templateId', '')}
+                >
+                  Change
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
 /**
- * Step 3: Recipients
+ * Step 3: Recipient Selection
  */
-function Step3Recipients({
+function Step3RecipientSelection({
   formData,
   contacts,
   groups,
@@ -1503,162 +1642,191 @@ function Step3Recipients({
         </Button>
       </div>
 
-      {/* Send To Mode Selection */}
-      <div>
-        <label className="block text-sm font-medium mb-3">
-          Send To <span className="text-red-500">*</span>
-        </label>
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => updateField('sendToMode', 'all')}
-            className={`px-4 py-2 rounded-full font-medium transition-colors ${
-              formData.sendToMode === 'all'
-                ? 'bg-purple text-white'
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            All Contacts ({contacts.filter(c => c.status === 'active').length})
-          </button>
-          <button
-            onClick={() => updateField('sendToMode', 'groups')}
-            className={`px-4 py-2 rounded-full font-medium transition-colors ${
-              formData.sendToMode === 'groups'
-                ? 'bg-purple text-white'
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            Select Groups
-          </button>
-          <button
-            onClick={() => updateField('sendToMode', 'contacts')}
-            className={`px-4 py-2 rounded-full font-medium transition-colors ${
-              formData.sendToMode === 'contacts'
-                ? 'bg-purple text-white'
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            Select Contacts
-          </button>
-        </div>
-        {errors.recipients && (
-          <p className="mt-2 text-sm text-red-600">{errors.recipients}</p>
-        )}
-      </div>
-
-      {/* Group Selection */}
-      {formData.sendToMode === 'groups' && (
-        <div>
-          <label className="block text-sm font-medium mb-3">
-            Select Groups
-          </label>
-          {contactsLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="animate-spin text-purple" size={24} />
-            </div>
-          ) : contactsError ? (
-            <div className="text-center py-8 text-red-600">{contactsError}</div>
-          ) : groups.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              No groups found. Create groups to organize your contacts.
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-64 overflow-y-auto border border-gray-200 rounded-lg p-4">
-              {groups.map((group) => (
-                <label
-                  key={group.id}
-                  className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={formData.selectedGroups.has(group.id)}
-                    onChange={() => toggleGroup(group.id)}
-                    className="w-4 h-4 text-purple focus:ring-purple rounded"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium">{group.name}</div>
-                    {group.description && (
-                      <div className="text-sm text-gray-500">{group.description}</div>
-                    )}
-                    <div className="text-xs text-gray-400 mt-1">
-                      {group.contact_count || 0} contact{group.contact_count !== 1 ? 's' : ''}
-                    </div>
-                  </div>
-                </label>
-              ))}
-            </div>
-          )}
+      {errors.recipients && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+          {errors.recipients}
         </div>
       )}
 
-      {/* Contact Selection */}
-      {formData.sendToMode === 'contacts' && (
+      {/* ✅ FIX 4: Loading State */}
+      {contactsLoading && (
+        <div className="flex flex-col items-center justify-center py-12 bg-gray-50 rounded-lg">
+          <Loader2 size={48} className="animate-spin text-purple mb-4" />
+          <p className="text-gray-600 font-medium">Loading contacts...</p>
+          <p className="text-sm text-gray-500 mt-1">Please wait while we fetch your contacts</p>
+        </div>
+      )}
+
+      {/* ✅ FIX 4: Error State */}
+      {!contactsLoading && contactsError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <div className="flex items-start gap-3">
+            <AlertCircle size={24} className="text-red-600 flex-shrink-0" />
+            <div className="flex-1">
+              <h4 className="font-semibold text-red-800 mb-2">Unable to Load Contacts</h4>
+              <p className="text-sm text-red-700 mb-4">{contactsError}</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => window.location.href = '/app/contacts'}
+                  className="px-4 py-2 bg-purple text-white rounded-lg hover:bg-purple/90 text-sm font-medium"
+                >
+                  Go to Contacts
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ FIX 4: Empty State - No Contacts */}
+      {!contactsLoading && !contactsError && contacts.length === 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+          <div className="flex items-start gap-3">
+            <AlertCircle size={24} className="text-yellow-600 flex-shrink-0" />
+            <div className="flex-1">
+              <h4 className="font-semibold text-yellow-800 mb-2">No Contacts Found</h4>
+              <p className="text-sm text-yellow-700 mb-4">
+                You need to add contacts before you can create a campaign. Contacts can be imported from CSV or added individually.
+              </p>
+              <button
+                onClick={() => window.location.href = '/app/contacts'}
+                className="px-4 py-2 bg-purple text-white rounded-lg hover:bg-purple/90 text-sm font-medium"
+              >
+                Add Contacts
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send Mode Selection - Only show when contacts loaded successfully */}
+      {!contactsLoading && !contactsError && contacts.length > 0 && (
         <>
           <div>
-            <label className="block text-sm font-medium mb-3">
-              Select Contacts
-            </label>
-            
-            {/* ✅ FIX 1: Added Search Input */}
-            <div className="mb-3">
-              <Input
-                type="text"
-                placeholder="Search contacts by name or email..."
-                value={contactSearchQuery}
-                onChange={(e) => setContactSearchQuery(e.target.value)}
-                className="w-full"
-              />
+            <label className="block text-sm font-medium mb-3">Send To:</label>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => updateField('sendToMode', 'all')}
+                className={`px-4 py-2 rounded-full font-medium transition-colors ${
+                  formData.sendToMode === 'all'
+                    ? 'bg-purple text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                All Contacts ({contacts.length})
+              </button>
+              <button
+                onClick={() => updateField('sendToMode', 'groups')}
+                className={`px-4 py-2 rounded-full font-medium transition-colors ${
+                  formData.sendToMode === 'groups'
+                    ? 'bg-purple text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Select Groups
+              </button>
+              <button
+                onClick={() => updateField('sendToMode', 'contacts')}
+                className={`px-4 py-2 rounded-full font-medium transition-colors ${
+                  formData.sendToMode === 'contacts'
+                    ? 'bg-purple text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Select Contacts
+              </button>
             </div>
+          </div>
 
-            {contactsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="animate-spin text-purple" size={24} />
-              </div>
-            ) : contactsError ? (
-              <div className="text-center py-8 text-red-600">{contactsError}</div>
-            ) : contacts.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                No contacts found. Add contacts to send campaigns.
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-80 overflow-y-auto border border-gray-200 rounded-lg p-4">
-                {/* ✅ FIX 2: Select All Checkbox */}
-                <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer font-medium border-b border-gray-200">
-                  <input
-                    type="checkbox"
-                    checked={formData.selectedContacts.size === contacts.length && contacts.length > 0}
-                    onChange={toggleAllContacts}
-                    className="w-4 h-4 text-purple focus:ring-purple rounded"
-                  />
-                  <span>Select All ({contacts.length})</span>
-                </label>
+          {/* Group Selection */}
+          {formData.sendToMode === 'groups' && (
+            <div className="border-2 border-gray-200 rounded-lg p-4 max-h-64 overflow-y-auto">
+              <div className="text-sm font-medium mb-3">Select Groups:</div>
+              {groups.length === 0 ? (
+                <p className="text-sm text-gray-500">No groups available</p>
+              ) : (
+                <div className="space-y-2">
+                  {groups.map((group) => (
+                    <label
+                      key={group.id}
+                      className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.selectedGroups.has(group.id)}
+                        onChange={() => toggleGroup(group.id)}
+                        className="w-4 h-4"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">{group.name}</div>
+                        {group.description && (
+                          <div className="text-xs text-gray-500">{group.description}</div>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {group.contact_count} contacts
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-                {/* ✅ FIX 3: Render filtered contacts */}
+          {/* ✅ FIX 4: Enhanced Contact Selection with Search */}
+          {formData.sendToMode === 'contacts' && (
+            <div className="border-2 border-gray-200 rounded-lg p-4">
+              {/* Header with Search and Select All */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-sm font-medium">Select Contacts:</div>
+                <button
+                  onClick={toggleAllContacts}
+                  className="text-xs text-purple hover:underline font-medium"
+                >
+                  {formData.selectedContacts.size === contacts.length
+                    ? 'Deselect All'
+                    : 'Select All'}
+                </button>
+              </div>
+
+              {/* ✅ Search Input */}
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="Search contacts by name or email..."
+                  value={contactSearchQuery}
+                  onChange={(e) => setContactSearchQuery(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple focus:border-transparent"
+                />
+              </div>
+
+              {/* Contact List */}
+              <div className="max-h-64 overflow-y-auto space-y-2">
                 {filteredContacts.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    No contacts match your search.
+                  <div className="text-center py-6 text-gray-500">
+                    <p className="text-sm">No contacts match your search</p>
                   </div>
                 ) : (
                   filteredContacts.map((contact) => (
                     <label
                       key={contact.id}
-                      className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer"
+                      className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer"
                     >
                       <input
                         type="checkbox"
                         checked={formData.selectedContacts.has(contact.id)}
                         onChange={() => toggleContact(contact.id)}
-                        className="w-4 h-4 text-purple focus:ring-purple rounded"
+                        className="w-4 h-4 text-purple focus:ring-purple"
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">
-                          {contact.first_name || contact.last_name
-                            ? `${contact.first_name || ''} ${contact.last_name || ''}`.trim()
-                            : 'No Name'}
+                        <div className="text-sm font-medium truncate">
+                          {contact.first_name} {contact.last_name}
                         </div>
-                        <div className="text-sm text-gray-500 truncate">{contact.email}</div>
+                        <div className="text-xs text-gray-500 truncate">{contact.email}</div>
                       </div>
-                      <span className={`text-xs px-2 py-1 rounded-full ${
-                        contact.status === 'active'
+                      {/* ✅ Status Badge */}
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                        contact.status === 'active' 
                           ? 'bg-green-100 text-green-700'
                           : contact.status === 'subscribed'
                           ? 'bg-blue-100 text-blue-700'
