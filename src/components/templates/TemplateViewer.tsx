@@ -96,9 +96,41 @@ export default function TemplateViewer({
 
         case 'image':
           if (section.content.imageUrl) {
-            sectionsHTML += '<tr><td style="padding: 20px 40px; text-align: center;"><img src="' + escapeHtml(section.content.imageUrl) + '" alt="' + escapeHtml(section.content.imageAlt || 'Image') + '" style="max-width: 100%; height: auto; display: block; margin: 0 auto; border-radius: 8px; border: 0;">';
+            // Get image sizing and alignment settings
+            const imageWidth = section.content.imageWidth || 'auto';
+            const imageMaxWidth = section.content.imageMaxWidth || '100%';
+            const imageAlign = section.content.imageAlign || 'center';
+            
+            // Determine alignment style
+            let alignStyle = 'margin: 0 auto;'; // center (default)
+            if (imageAlign === 'left') {
+              alignStyle = 'margin: 0 auto 0 0;';
+            } else if (imageAlign === 'right') {
+              alignStyle = 'margin: 0 0 0 auto;';
+            }
+            
+            // Build image style
+            let imageStyle = 'height: auto; display: block; border-radius: 8px; border: 0;';
+            
+            if (imageMaxWidth === 'none') {
+              // Original size - no max-width constraint
+              imageStyle += ' width: auto;';
+            } else {
+              // Size constraint
+              imageStyle += ' width: ' + imageWidth + '; max-width: ' + imageMaxWidth + ';';
+            }
+            
+            imageStyle += ' ' + alignStyle;
+            
+            // Determine cell alignment
+            let cellAlign = 'center';
+            if (imageAlign === 'left') cellAlign = 'left';
+            if (imageAlign === 'right') cellAlign = 'right';
+            
+            sectionsHTML += '<tr><td style="padding: 20px 40px; text-align: ' + cellAlign + ';"><img src="' + escapeHtml(section.content.imageUrl) + '" alt="' + escapeHtml(section.content.imageAlt || 'Image') + '" style="' + imageStyle + '">';
+            
             if (section.content.caption) {
-              sectionsHTML += '<p style="margin: 10px 0 0 0; color: #666666; font-size: 14px; text-align: center; font-style: italic; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.caption) + '</p>';
+              sectionsHTML += '<p style="margin: 10px 0 0 0; color: #666666; font-size: 14px; text-align: ' + cellAlign + '; font-style: italic; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.caption) + '</p>';
             }
             sectionsHTML += '</td></tr>';
           }

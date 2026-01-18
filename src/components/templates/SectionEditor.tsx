@@ -80,6 +80,9 @@ const SECTION_TEMPLATES: Record<string, Partial<Section>> = {
       imageUrl: '',
       imageAlt: '',
       caption: '',
+      imageWidth: 'auto',        // ✅ NEW
+      imageAlign: 'center',      // ✅ NEW
+      imageMaxWidth: '100%',     // ✅ NEW
     },
   },
   button: {
@@ -341,6 +344,97 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
                   updateSectionContent(section.id, { imageUrl: '' });
                 }}
               />
+            </div>
+
+            {/* ✅ NEW: Image Size Control */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Image Size
+              </label>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <button
+                  onClick={() => updateSectionContent(section.id, { imageWidth: 'auto', imageMaxWidth: '200px' })}
+                  className={`px-3 py-2 border-2 rounded-lg font-medium transition-colors ${
+                    section.content.imageWidth === 'auto' && section.content.imageMaxWidth === '200px'
+                      ? 'border-purple bg-purple/10 text-purple'
+                      : 'border-gray-300 hover:border-purple'
+                  }`}
+                >
+                  Small (200px)
+                </button>
+                <button
+                  onClick={() => updateSectionContent(section.id, { imageWidth: 'auto', imageMaxWidth: '400px' })}
+                  className={`px-3 py-2 border-2 rounded-lg font-medium transition-colors ${
+                    section.content.imageWidth === 'auto' && section.content.imageMaxWidth === '400px'
+                      ? 'border-purple bg-purple/10 text-purple'
+                      : 'border-gray-300 hover:border-purple'
+                  }`}
+                >
+                  Medium (400px)
+                </button>
+                <button
+                  onClick={() => updateSectionContent(section.id, { imageWidth: 'auto', imageMaxWidth: '600px' })}
+                  className={`px-3 py-2 border-2 rounded-lg font-medium transition-colors ${
+                    section.content.imageWidth === 'auto' && section.content.imageMaxWidth === '600px'
+                      ? 'border-purple bg-purple/10 text-purple'
+                      : 'border-gray-300 hover:border-purple'
+                  }`}
+                >
+                  Large (600px)
+                </button>
+                <button
+                  onClick={() => updateSectionContent(section.id, { imageWidth: 'auto', imageMaxWidth: 'none' })}
+                  className={`px-3 py-2 border-2 rounded-lg font-medium transition-colors ${
+                    section.content.imageMaxWidth === 'none'
+                      ? 'border-purple bg-purple/10 text-purple'
+                      : 'border-gray-300 hover:border-purple'
+                  }`}
+                >
+                  Original Size
+                </button>
+              </div>
+              <p className="text-xs text-gray-500">
+                💡 Original size uses the image's actual dimensions
+              </p>
+            </div>
+
+            {/* ✅ NEW: Image Alignment Control */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Image Alignment
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => updateSectionContent(section.id, { imageAlign: 'left' })}
+                  className={`px-3 py-2 border-2 rounded-lg font-medium transition-colors ${
+                    section.content.imageAlign === 'left'
+                      ? 'border-purple bg-purple/10 text-purple'
+                      : 'border-gray-300 hover:border-purple'
+                  }`}
+                >
+                  ← Left
+                </button>
+                <button
+                  onClick={() => updateSectionContent(section.id, { imageAlign: 'center' })}
+                  className={`px-3 py-2 border-2 rounded-lg font-medium transition-colors ${
+                    section.content.imageAlign === 'center' || !section.content.imageAlign
+                      ? 'border-purple bg-purple/10 text-purple'
+                      : 'border-gray-300 hover:border-purple'
+                  }`}
+                >
+                  ⬌ Center
+                </button>
+                <button
+                  onClick={() => updateSectionContent(section.id, { imageAlign: 'right' })}
+                  className={`px-3 py-2 border-2 rounded-lg font-medium transition-colors ${
+                    section.content.imageAlign === 'right'
+                      ? 'border-purple bg-purple/10 text-purple'
+                      : 'border-gray-300 hover:border-purple'
+                  }`}
+                >
+                  Right →
+                </button>
+              </div>
             </div>
 
             {/* Image Alt Text */}
