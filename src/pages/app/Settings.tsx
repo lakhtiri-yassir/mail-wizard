@@ -7,6 +7,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useStripeCheckout } from '../../hooks/useStripeCheckout';
 import DomainsContent from '../../components/settings/DomainsContent';
 import SecurityContent from '../../components/settings/SecurityContent';
+import { supabase } from '../../lib/supabase';
+import toast from 'react-hot-toast';
 
 const tabs = [
   { id: 'profile', label: 'Profile', icon: User },
@@ -16,9 +18,14 @@ const tabs = [
 ];
 
 export const Settings = () => {
-  const { profile } = useAuth();
+  const { profile, setProfile } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const { createCheckoutSession, loading: checkoutLoading } = useStripeCheckout();
+  
+  // Form state
+  const [fullName, setFullName] = useState(profile?.full_name || '');
+  const [companyName, setCompanyName] = useState(profile?.company_name || '');
+  const [saving, setSaving] = useState(false);
 
   const handleUpgrade = (plan: 'pro' | 'pro_plus') => {
     createCheckoutSession(plan);
@@ -26,6 +33,55 @@ export const Settings = () => {
 
   const handleTabClick = (tabId: string) => {
     setActiveTab(tabId);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+
+    try {
+      // Get current authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        toast.error('Not authenticated');
+        return;
+      }
+
+      // Update profile in database
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: fullName,
+          company_name: companyName,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      // Show success message
+      toast.success('Profile updated successfully!');
+      
+      // Refresh profile data to show updated values
+      const { data: updatedProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      
+      if (updatedProfile && setProfile) {
+        setProfile(updatedProfile);
+        // Update local state to match
+        setFullName(updatedProfile.full_name || '');
+        setCompanyName(updatedProfile.company_name || '');
+      }
+    } catch (error: any) {
+      console.error('Error updating profile:', error);
+      toast.error(error.message || 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -63,28 +119,36 @@ export const Settings = () => {
             {activeTab === 'profile' && (
               <div className="card max-w-2xl">
                 <h2 className="text-xl font-serif font-bold mb-6">Profile Information</h2>
-                <form className="space-y-4">
+                <form onSubmit={handleSaveProfile} className="space-y-4">
                   <Input
                     type="text"
                     label="Full Name"
-                    defaultValue={profile?.full_name || ''}
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
                     placeholder="Your full name"
                   />
                   <Input
                     type="email"
                     label="Email"
-                    defaultValue={profile?.email || ''}
+                    value={profile?.email || ''}
                     disabled
                   />
                   <Input
                     type="text"
                     label="Company Name"
-                    defaultValue={profile?.company_name || ''}
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
                     placeholder="Your company"
                   />
                   <div className="pt-4">
-                    <Button variant="primary" size="md">
-                      Save Changes
+                    <Button 
+                      type="submit"
+                      variant="primary" 
+                      size="md"
+                      loading={saving}
+                      disabled={saving}
+                    >
+                      {saving ? 'Saving...' : 'Save Changes'}
                     </Button>
                   </div>
                 </form>

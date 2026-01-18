@@ -123,6 +123,13 @@ async function createSendGridDomain(domain: string) {
   }
 
   const data = await response.json();
+  
+  // Validate that we got an ID from SendGrid
+  if (!data || !data.id) {
+    console.error('❌ SendGrid response missing ID:', JSON.stringify(data, null, 2));
+    throw new Error('SendGrid API returned invalid response: missing domain ID');
+  }
+  
   console.log('✅ Domain created, ID:', data.id);
 
   // Fetch the domain again to get complete DNS records
@@ -256,6 +263,20 @@ async function addDomain(supabase: any, userId: string, domain: string, planType
     }
   }
 
+  // ✅ FIX: Validate that we have valid SendGrid domain data with an ID
+  if (!sendgridDomainData || !sendgridDomainData.id) {
+    console.error('❌ SendGrid domain data is invalid:', sendgridDomainData);
+    throw new Error('Failed to create domain in SendGrid: Invalid response from SendGrid API. The domain ID is missing.');
+  }
+
+  // Validate DNS records are present
+  if (!sendgridDomainData.dns_records || typeof sendgridDomainData.dns_records !== 'object') {
+    console.error('❌ DNS records are missing or invalid:', sendgridDomainData);
+    throw new Error('Failed to retrieve DNS configuration from SendGrid. Please try again or contact support.');
+  }
+
+  console.log('✅ SendGrid domain validated, ID:', sendgridDomainData.id);
+
   // Insert domain into database
   const { data: newDomain, error: insertError } = await supabase
     .from('sending_domains')
@@ -299,6 +320,12 @@ async function fetchExistingSendGridDomain(domain: string) {
 
   const allDomains = await response.json();
   
+  // Validate response is an array
+  if (!Array.isArray(allDomains)) {
+    console.error('❌ Invalid SendGrid domains list response:', allDomains);
+    throw new Error('SendGrid API returned invalid domains list');
+  }
+  
   // Find matching domain
   const matchingDomain = allDomains.find((d: any) => 
     d.domain === domain
@@ -306,6 +333,12 @@ async function fetchExistingSendGridDomain(domain: string) {
 
   if (!matchingDomain) {
     throw new Error(`Domain ${domain} not found in SendGrid`);
+  }
+
+  // Validate matching domain has an ID
+  if (!matchingDomain.id) {
+    console.error('❌ Found domain but missing ID:', matchingDomain);
+    throw new Error(`Domain ${domain} found in SendGrid but has no ID`);
   }
 
   console.log('✅ Found existing domain, ID:', matchingDomain.id);
@@ -318,6 +351,17 @@ async function fetchExistingSendGridDomain(domain: string) {
  * Extracts ALL DNS records from SendGrid domain object
  */
 function extractDNSRecords(sendgridDomain: any) {
+  // ✅ FIX: Validate input
+  if (!sendgridDomain) {
+    console.error('❌ extractDNSRecords received null/undefined domain');
+    throw new Error('Invalid SendGrid domain object: domain is null or undefined');
+  }
+  
+  if (!sendgridDomain.id) {
+    console.error('❌ SendGrid domain missing ID:', JSON.stringify(sendgridDomain, null, 2));
+    throw new Error('SendGrid domain response is missing required ID field');
+  }
+
   const dns_records: any = {};
 
   console.log('📋 Extracting DNS records from SendGrid response...');
@@ -548,16 +592,16 @@ async function deleteDomain(supabase: any, userId: string, domainId: string) {
   }
 
   console.log('✅ Domain deleted successfully');
-  return { success: true };
+  return { success: true, message: 'Domain deleted successfully' };
 }
 
 /**
- * Sets a domain as default
+ * Sets a domain as the default sending domain
  */
 async function setDefaultDomain(supabase: any, userId: string, domainId: string) {
   console.log(`⭐ Setting default domain: ${domainId}`);
 
-  // Verify domain exists and belongs to user
+  // Get domain
   const { data: domain, error: fetchError } = await supabase
     .from('sending_domains')
     .select('*')
@@ -566,20 +610,29 @@ async function setDefaultDomain(supabase: any, userId: string, domainId: string)
     .single();
 
   if (fetchError || !domain) {
+    console.error('❌ Domain not found:', fetchError);
     throw new Error('Domain not found');
   }
 
-  // Unset current default
+  // Check if domain is verified
+  if (domain.verification_status !== 'verified') {
+    console.warn('⚠️ Attempting to set unverified domain as default');
+    throw new Error('Only verified domains can be set as default');
+  }
+
+  // Remove default from all other domains
   await supabase
     .from('sending_domains')
     .update({ is_default: false })
-    .eq('user_id', userId)
-    .eq('is_default', true);
+    .eq('user_id', userId);
 
-  // Set new default
-  const { data: updatedDomain, error: updateError } = await supabase
+  // Set this domain as default
+  const { data: updated, error: updateError } = await supabase
     .from('sending_domains')
-    .update({ is_default: true })
+    .update({
+      is_default: true,
+      updated_at: new Date().toISOString()
+    })
     .eq('id', domainId)
     .select()
     .single();
@@ -589,17 +642,17 @@ async function setDefaultDomain(supabase: any, userId: string, domainId: string)
     throw new Error('Failed to set default domain');
   }
 
-  console.log('✅ Default domain updated');
-  return updatedDomain;
+  console.log('✅ Default domain set successfully');
+  return updated;
 }
 
 /**
  * Removes default status from a domain
  */
 async function removeDefaultDomain(supabase: any, userId: string, domainId: string) {
-  console.log(`⭐ Removing default status from domain: ${domainId}`);
+  console.log(`🔄 Removing default status from domain: ${domainId}`);
 
-  // Verify domain exists and belongs to user
+  // Get domain
   const { data: domain, error: fetchError } = await supabase
     .from('sending_domains')
     .select('*')
