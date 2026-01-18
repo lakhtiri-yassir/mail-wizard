@@ -47,6 +47,20 @@ interface TemplateViewerProps {
   showActions?: boolean;
 }
 
+/**
+ * HTML escape utility for XSS prevention
+ */
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, (m) => map[m]);
+}
+
 export default function TemplateViewer({
   template,
   onEdit,
@@ -61,133 +75,46 @@ export default function TemplateViewer({
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
   const [sections, setSections] = useState<Section[]>(template.content.sections || []);
 
-  // Generate HTML for preview
+  // ✅ FIXED: Email-client-compatible HTML generation (matches sent emails exactly)
   const generatePreviewHTML = () => {
     const settings = template.content.settings;
-    
     let sectionsHTML = '';
+
     sections.forEach(section => {
       switch (section.type) {
         case 'header':
-          sectionsHTML += `
-            <tr>
-              <td style="padding: 40px 40px 20px 40px; text-align: center;">
-                <h1 style="margin: 0 0 10px 0; color: ${settings.textColor}; font-size: 32px; font-weight: bold; font-family: ${settings.fontFamily};">
-                  ${section.content.title || ''}
-                </h1>
-                ${section.content.subtitle ? `
-                  <p style="margin: 0; color: #666666; font-size: 16px; font-family: ${settings.fontFamily};">
-                    ${section.content.subtitle}
-                  </p>
-                ` : ''}
-              </td>
-            </tr>
-          `;
+          sectionsHTML += '<tr><td style="padding: 40px 40px 20px 40px; text-align: center;"><h1 style="margin: 0 0 10px 0; color: ' + settings.textColor + '; font-size: 32px; font-weight: bold; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.title || '') + '</h1>';
+          if (section.content.subtitle) {
+            sectionsHTML += '<p style="margin: 0; color: #666666; font-size: 16px; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.subtitle) + '</p>';
+          }
+          sectionsHTML += '</td></tr>';
           break;
 
         case 'text':
-          sectionsHTML += `
-            <tr>
-              <td style="padding: 20px 40px;">
-                <div style="color: ${settings.textColor}; font-size: 16px; line-height: 1.6; font-family: ${settings.fontFamily}; white-space: pre-wrap;">
-                  ${section.content.text || ''}
-                </div>
-              </td>
-            </tr>
-          `;
+          sectionsHTML += '<tr><td style="padding: 20px 40px;"><div style="color: ' + settings.textColor + '; font-size: 16px; line-height: 1.6; font-family: ' + settings.fontFamily + '; white-space: pre-wrap;">' + escapeHtml(section.content.text || '') + '</div></td></tr>';
           break;
 
         case 'image':
           if (section.content.imageUrl) {
-            sectionsHTML += `
-              <tr>
-                <td style="padding: 20px 40px;">
-                  <img src="${section.content.imageUrl}" alt="${section.content.imageAlt || 'Image'}" style="max-width: 100%; height: auto; display: block; border-radius: 8px; margin: 0 auto;">
-                  ${section.content.caption ? `
-                    <p style="margin: 10px 0 0 0; color: #666666; font-size: 14px; text-align: center; font-style: italic; font-family: ${settings.fontFamily};">
-                      ${section.content.caption}
-                    </p>
-                  ` : ''}
-                </td>
-              </tr>
-            `;
+            sectionsHTML += '<tr><td style="padding: 20px 40px; text-align: center;"><img src="' + escapeHtml(section.content.imageUrl) + '" alt="' + escapeHtml(section.content.imageAlt || 'Image') + '" style="max-width: 100%; height: auto; display: block; margin: 0 auto; border-radius: 8px; border: 0;">';
+            if (section.content.caption) {
+              sectionsHTML += '<p style="margin: 10px 0 0 0; color: #666666; font-size: 14px; text-align: center; font-style: italic; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.caption) + '</p>';
+            }
+            sectionsHTML += '</td></tr>';
           }
           break;
 
         case 'button':
-          sectionsHTML += `
-            <tr>
-              <td style="padding: 30px 40px; text-align: center;">
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 0 auto;">
-                  <tr>
-                    <td style="background-color: ${section.content.buttonColor || '#f3ba42'}; border: 2px solid #000000; border-radius: 50px; padding: 14px 32px;">
-                      <a href="${section.content.buttonUrl || '#'}" style="display: inline-block; color: #000000; text-decoration: none; font-weight: bold; font-size: 16px; font-family: ${settings.fontFamily};">
-                        ${section.content.buttonText || 'Click Here'}
-                      </a>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          `;
+          sectionsHTML += '<tr><td style="padding: 30px 40px; text-align: center;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 0 auto;"><tr><td style="background-color: ' + (section.content.buttonColor || '#f3ba42') + '; border: 2px solid #000000; border-radius: 50px; padding: 14px 32px;"><a href="' + escapeHtml(section.content.buttonUrl || '#') + '" style="display: inline-block; color: #000000; text-decoration: none; font-weight: bold; font-size: 16px; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.buttonText || 'Click Here') + '</a></td></tr></table></td></tr>';
           break;
 
         case 'divider':
-          sectionsHTML += `
-            <tr>
-              <td style="padding: 20px 40px;">
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                  <tr>
-                    <td style="border-top: 2px solid ${section.content.dividerColor || '#E5E7EB'}; font-size: 0; line-height: 0;">
-                      &nbsp;
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          `;
+          sectionsHTML += '<tr><td style="padding: 20px 40px;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"><tr><td style="border-top: 2px solid ' + (section.content.dividerColor || '#E5E7EB') + '; font-size: 0; line-height: 0;">&nbsp;</td></tr></table></td></tr>';
           break;
       }
     });
 
-    return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${template.name}</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: ${settings.fontFamily}; background-color: ${settings.backgroundColor};">
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: ${settings.backgroundColor};">
-    <tr>
-      <td align="center" style="padding: 20px 0;">
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width: 100%; max-width: 600px; background-color: #ffffff; border: 2px solid #000000; border-radius: 8px;">
-          <tr>
-            <td style="background-color: #ffffff; padding: 30px 40px; text-align: center; border-bottom: 3px solid ${settings.linkColor};">
-              <h1 style="margin: 0; color: ${settings.textColor}; font-size: 28px; font-weight: bold; font-family: 'DM Serif Display', Georgia, serif;">
-                ${settings.companyName}
-              </h1>
-            </td>
-          </tr>
-          ${sectionsHTML}
-          <tr>
-            <td style="background-color: #f9f9f9; padding: 30px 40px; text-align: center; border-top: 2px solid #e5e7eb;">
-              <p style="margin: 0 0 10px 0; font-size: 12px; color: #666666; font-family: ${settings.fontFamily};">
-                <a href="{{VIEW_IN_BROWSER_URL}}" style="color: ${settings.linkColor}; text-decoration: underline;">View in browser</a>
-              </p>
-              <p style="margin: 10px 0 0 0; font-size: 12px; color: #666666; font-family: ${settings.fontFamily};">
-                <a href="{{UNSUBSCRIBE_URL}}" style="color: #666666; text-decoration: underline;">Unsubscribe</a>
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-    `.trim();
+    return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title>' + escapeHtml(template.name) + '</title></head><body style="margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; background-color: ' + settings.backgroundColor + '; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: ' + settings.backgroundColor + ';"><tr><td align="center" style="padding: 20px 10px;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width: 100%; max-width: 600px; background-color: #ffffff; border: 2px solid #000000; border-radius: 8px;"><tr><td style="background-color: #ffffff; padding: 30px 40px; text-align: center; border-bottom: 3px solid ' + settings.linkColor + ';"><h1 style="margin: 0; color: ' + settings.textColor + '; font-size: 28px; font-weight: bold; font-family: \'DM Serif Display\', Georgia, serif;">' + escapeHtml(settings.companyName) + '</h1></td></tr>' + sectionsHTML + '<tr><td style="background-color: #f9f9f9; padding: 30px 40px; text-align: center; border-top: 2px solid #e5e7eb;"><p style="margin: 0 0 10px 0; font-size: 12px; color: #666666; font-family: ' + settings.fontFamily + ';"><a href="{{VIEW_IN_BROWSER_URL}}" style="color: ' + settings.linkColor + '; text-decoration: underline;">View in browser</a></p><p style="margin: 10px 0 0 0; font-size: 12px; color: #666666; font-family: ' + settings.fontFamily + ';"><a href="{{UNSUBSCRIBE_URL}}" style="color: #666666; text-decoration: underline;">Unsubscribe</a></p></td></tr></table></td></tr></table></body></html>';
   };
 
   return (

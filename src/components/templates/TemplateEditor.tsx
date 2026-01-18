@@ -59,6 +59,20 @@ const DEFAULT_SETTINGS: TemplateSettings = {
   fontFamily: "'DM Sans', sans-serif"
 };
 
+/**
+ * HTML escape utility for XSS prevention
+ */
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, (m) => map[m]);
+}
+
 export default function TemplateEditor({
   mode = 'create',
   existingTemplate,
@@ -153,125 +167,53 @@ export default function TemplateEditor({
     }
   }
 
-  // Generate HTML from sections
+  // ✅ FIXED: Email-client-compatible HTML generation (no extraneous whitespace)
   function generateHTML(): string {
     let sectionsHTML = '';
 
     sections.forEach(section => {
       switch (section.type) {
         case 'header':
-          sectionsHTML += `
-            <tr>
-              <td style="padding: 40px 40px 20px 40px; text-align: center;">
-                <h1 style="margin: 0 0 10px 0; color: ${settings.textColor}; font-size: 32px; font-weight: bold; font-family: ${settings.fontFamily};">
-                  ${section.content.title || ''}
-                </h1>
-                ${section.content.subtitle ?
-                  `
-                  <p style="margin: 0; color: #666666; font-size: 18px; font-family: ${settings.fontFamily};">
-                    ${section.content.subtitle}
-                  </p>
-                ` : ''}
-              </td>
-            </tr>
-          `;
+          sectionsHTML += '<tr><td style="padding: 40px 40px 20px 40px; text-align: center;"><h1 style="margin: 0 0 10px 0; color: ' + settings.textColor + '; font-size: 32px; font-weight: bold; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.title || '') + '</h1>';
+          if (section.content.subtitle) {
+            sectionsHTML += '<p style="margin: 0; color: #666666; font-size: 18px; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.subtitle) + '</p>';
+          }
+          sectionsHTML += '</td></tr>';
           break;
 
         case 'text':
-          sectionsHTML += `
-            <tr>
-              <td style="padding: 20px 40px;">
-                <div style="color: ${settings.textColor}; font-size: 16px; line-height: 1.6; font-family: ${settings.fontFamily};">
-                  ${section.content.text || ''}
-                </div>
-              </td>
-            </tr>
-          `;
+          sectionsHTML += '<tr><td style="padding: 20px 40px;"><div style="color: ' + settings.textColor + '; font-size: 16px; line-height: 1.6; font-family: ' + settings.fontFamily + '; white-space: pre-wrap;">' + escapeHtml(section.content.text || '') + '</div></td></tr>';
           break;
 
         case 'image':
-          sectionsHTML += `
-            <tr>
-              <td style="padding: 20px 40px; text-align: center;">
-                ${section.content.imageUrl ? `
-                  <img src="${section.content.imageUrl}" alt="${section.content.imageAlt || ''}" style="max-width: 100%; height: auto; display: block; margin: 0 auto;">
-                  ${section.content.caption ? `
-                    <p style="margin: 10px 0 0 0; color: #666666; font-size: 14px; font-family: ${settings.fontFamily};">
-                      ${section.content.caption}
-                    </p>
-                  ` : ''}
-                ` : ''}
-              </td>
-            </tr>
-          `;
+          if (section.content.imageUrl) {
+            sectionsHTML += '<tr><td style="padding: 20px 40px; text-align: center;"><img src="' + escapeHtml(section.content.imageUrl) + '" alt="' + escapeHtml(section.content.imageAlt || 'Image') + '" style="max-width: 100%; height: auto; display: block; margin: 0 auto; border-radius: 8px; border: 0;">';
+            if (section.content.caption) {
+              sectionsHTML += '<p style="margin: 10px 0 0 0; color: #666666; font-size: 14px; text-align: center; font-style: italic; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.caption) + '</p>';
+            }
+            sectionsHTML += '</td></tr>';
+          }
           break;
 
         case 'button':
-          sectionsHTML += `
-            <tr>
-              <td style="padding: 20px 40px; text-align: center;">
-                <a href="${section.content.buttonUrl || '#'}" style="display: inline-block; padding: 14px 32px; background-color: ${section.content.buttonColor || settings.linkColor}; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-family: ${settings.fontFamily};">
-                  ${section.content.buttonText || 'Click Here'}
-                </a>
-              </td>
-            </tr>
-          `;
+          sectionsHTML += '<tr><td style="padding: 30px 40px; text-align: center;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 0 auto;"><tr><td style="background-color: ' + (section.content.buttonColor || settings.linkColor) + '; border: 2px solid #000000; border-radius: 50px; padding: 14px 32px;"><a href="' + escapeHtml(section.content.buttonUrl || '#') + '" style="display: inline-block; color: #000000; text-decoration: none; font-weight: bold; font-size: 16px; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.buttonText || 'Click Here') + '</a></td></tr></table></td></tr>';
           break;
 
         case 'divider':
-          sectionsHTML += `
-            <tr>
-              <td style="padding: 20px 40px;">
-                <hr style="border: none; border-top: 2px solid ${section.content.dividerColor || '#E5E7EB'}; margin: 0;">
-              </td>
-            </tr>
-          `;
+          sectionsHTML += '<tr><td style="padding: 20px 40px;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"><tr><td style="border-top: 2px solid ' + (section.content.dividerColor || '#E5E7EB') + '; font-size: 0; line-height: 0;">&nbsp;</td></tr></table></td></tr>';
           break;
 
         case 'footer':
-          sectionsHTML += `
-            <tr>
-              <td style="padding: 40px 40px 40px 40px; text-align: center; background-color: #f9fafb;">
-                <p style="margin: 0 0 10px 0; color: #666666; font-size: 14px; font-family: ${settings.fontFamily};">
-                  ${section.content.companyName || settings.companyName}
-                </p>
-                ${section.content.address ?
-                  `
-                  <p style="margin: 0 0 10px 0; color: #666666; font-size: 12px; font-family: ${settings.fontFamily};">
-                    ${section.content.address}
-                  </p>
-                ` : ''}
-                <p style="margin: 0; color: #999999; font-size: 11px; font-family: ${settings.fontFamily};">
-                  <a href="{{unsubscribe_url}}" style="color: #999999; text-decoration: underline;">Unsubscribe</a>
-                </p>
-              </td>
-            </tr>
-          `;
+          sectionsHTML += '<tr><td style="padding: 40px 40px 40px 40px; text-align: center; background-color: #f9fafb;"><p style="margin: 0 0 10px 0; color: #666666; font-size: 14px; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.companyName || settings.companyName) + '</p>';
+          if (section.content.address) {
+            sectionsHTML += '<p style="margin: 0 0 10px 0; color: #666666; font-size: 12px; font-family: ' + settings.fontFamily + ';">' + escapeHtml(section.content.address) + '</p>';
+          }
+          sectionsHTML += '<p style="margin: 0; color: #999999; font-size: 11px; font-family: ' + settings.fontFamily + ';"><a href="{{unsubscribe_url}}" style="color: #999999; text-decoration: underline;">Unsubscribe</a></p></td></tr>';
           break;
       }
     });
 
-    return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${templateName}</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: ${settings.backgroundColor}; font-family: ${settings.fontFamily};">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
-    <tr>
-      <td align="center" style="padding: 40px 0;">
-        <table role="presentation" style="width: 600px; max-width: 100%; border-collapse: collapse; background-color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-          ${sectionsHTML}
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-    `.trim();
+    return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title>' + escapeHtml(templateName) + '</title></head><body style="margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; background-color: ' + settings.backgroundColor + '; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: ' + settings.backgroundColor + ';"><tr><td align="center" style="padding: 20px 10px;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width: 100%; max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden;">' + sectionsHTML + '</table></td></tr></table></body></html>';
   }
 
   // ✅ FIX: Handle save with proper template ID validation
