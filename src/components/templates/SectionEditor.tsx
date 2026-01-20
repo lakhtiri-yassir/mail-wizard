@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * Section Editor Component
+ * Section Editor Component - COMPLETE WITH AUTO-SCROLL
  * ============================================================================
  * 
  * Purpose: Drag-and-drop email section builder with inline editing
@@ -12,18 +12,19 @@
  * - Delete sections
  * - Duplicate sections
  * - Visual preview of each section type
+ * - ✅ NEW: Auto-scroll while dragging near edges
  * 
  * Section Types:
  * - Header: Title and subtitle
  * - Text: Rich text content with merge fields
- * - Image: Upload image with alt text and caption
+ * - Image: Upload image with alt text and caption (with size/alignment controls)
  * - Button: CTA button with URL and styling
  * - Divider: Horizontal line separator
  * 
  * ============================================================================
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react'; // ✅ ADDED useRef
 import {
   GripVertical,
   Plus,
@@ -80,9 +81,9 @@ const SECTION_TEMPLATES: Record<string, Partial<Section>> = {
       imageUrl: '',
       imageAlt: '',
       caption: '',
-      imageWidth: 'auto',        // ✅ NEW
-      imageAlign: 'center',      // ✅ NEW
-      imageMaxWidth: '100%',     // ✅ NEW
+      imageWidth: 'auto',
+      imageAlign: 'center',
+      imageMaxWidth: '100%',
     },
   },
   button: {
@@ -107,15 +108,37 @@ const SECTION_TEMPLATES: Record<string, Partial<Section>> = {
 
 export default function SectionEditor({ sections, onChange }: SectionEditorProps) {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const scrollIntervalRef = useRef<number | null>(null); // ✅ NEW
+  const [autoScrollSpeed, setAutoScrollSpeed] = useState(0); // ✅ NEW
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(sections.map((s) => s.id))
   );
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null); // ✅ NEW
 
   // Keep all sections expanded by default when sections change
   useEffect(() => {
     setExpandedSections(new Set(sections.map((s) => s.id)));
   }, [sections]);
+
+  // ✅ NEW: Auto-scroll effect
+  useEffect(() => {
+    if (autoScrollSpeed !== 0) {
+      scrollIntervalRef.current = window.setInterval(() => {
+        window.scrollBy(0, autoScrollSpeed);
+      }, 16); // 60fps smooth scrolling
+    } else {
+      if (scrollIntervalRef.current) {
+        clearInterval(scrollIntervalRef.current);
+        scrollIntervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (scrollIntervalRef.current) {
+        clearInterval(scrollIntervalRef.current);
+      }
+    };
+  }, [autoScrollSpeed]);
 
   // ============================================================================
   // SECTION MANAGEMENT
@@ -187,7 +210,7 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
   }
 
   // ============================================================================
-  // DRAG AND DROP - ✅ FIXED: Smooth performance
+  // DRAG AND DROP - ✅ SMOOTH + AUTO-SCROLL
   // ============================================================================
 
   function handleDragStart(e: React.DragEvent, index: number) {
@@ -199,10 +222,30 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     
-    // ✅ FIX: Only update hover state, don't modify sections array yet
     if (draggedIndex === null || draggedIndex === index) return;
     
     setDragOverIndex(index);
+
+    // ✅ NEW: Auto-scroll logic
+    const scrollThreshold = 100; // pixels from edge to trigger scroll
+    const maxScrollSpeed = 15; // max pixels per frame
+    const viewportHeight = window.innerHeight;
+    const mouseY = e.clientY;
+
+    if (mouseY < scrollThreshold) {
+      // Near top - scroll up
+      const distance = scrollThreshold - mouseY;
+      const speed = -Math.min(maxScrollSpeed, (distance / scrollThreshold) * maxScrollSpeed);
+      setAutoScrollSpeed(speed);
+    } else if (mouseY > viewportHeight - scrollThreshold) {
+      // Near bottom - scroll down
+      const distance = mouseY - (viewportHeight - scrollThreshold);
+      const speed = Math.min(maxScrollSpeed, (distance / scrollThreshold) * maxScrollSpeed);
+      setAutoScrollSpeed(speed);
+    } else {
+      // In middle - no scroll
+      setAutoScrollSpeed(0);
+    }
   }
 
   function handleDragLeave(e: React.DragEvent) {
@@ -216,10 +259,11 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
     if (draggedIndex === null || draggedIndex === dropIndex) {
       setDraggedIndex(null);
       setDragOverIndex(null);
+      setAutoScrollSpeed(0); // ✅ ADDED
       return;
     }
 
-    // ✅ FIX: Only commit the reorder on drop, not on every hover
+    // Only commit the reorder on drop
     const newSections = [...sections];
     const draggedSection = newSections[draggedIndex];
     
@@ -235,11 +279,13 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
     // Clear drag states
     setDraggedIndex(null);
     setDragOverIndex(null);
+    setAutoScrollSpeed(0); // ✅ ADDED
   }
 
   function handleDragEnd() {
     setDraggedIndex(null);
     setDragOverIndex(null);
+    setAutoScrollSpeed(0); // ✅ ADDED
   }
 
   // ============================================================================
@@ -378,7 +424,7 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
               />
             </div>
 
-            {/* ✅ NEW: Image Size Control */}
+            {/* Image Size Control */}
             <div>
               <label className="block text-sm font-medium mb-2">
                 Image Size
@@ -430,7 +476,7 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
               </p>
             </div>
 
-            {/* ✅ NEW: Image Alignment Control */}
+            {/* Image Alignment Control */}
             <div>
               <label className="block text-sm font-medium mb-2">
                 Image Alignment
@@ -509,6 +555,7 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
                 Button Text <span className="text-red-500">*</span>
               </label>
               <Input
+                key={`buttonText-${section.id}`}
                 type="text"
                 value={section.content.buttonText || ''}
                 onChange={(e) =>
@@ -522,6 +569,7 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
                 Button URL <span className="text-red-500">*</span>
               </label>
               <Input
+                key={`buttonUrl-${section.id}`}
                 type="url"
                 value={section.content.buttonUrl || ''}
                 onChange={(e) =>
