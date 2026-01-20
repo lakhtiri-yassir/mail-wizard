@@ -4,10 +4,11 @@
  * Campaign management with advanced recipient selection and status tracking.
  *
  * FEATURES:
- * - Display campaign status (Draft, Scheduled, Sent)
+ * - Display campaign status (Draft, Scheduled, Sending, Sent, Cancelled)
  * - Show email metrics (opens, clicks, bounces)
  * - Advanced recipient selection (groups + contacts)
  * - Real-time recipient count preview
+ * - Campaign cancellation during sending
  */
 
 import { useState, useEffect } from "react";
@@ -24,6 +25,7 @@ import {
   Trash2,
   Play,
   Users,
+  XCircle,
 } from "lucide-react";
 import { AppLayout } from "../../components/app/AppLayout";
 import { useAuth } from "../../contexts/AuthContext";
@@ -49,6 +51,9 @@ interface Campaign {
   bounces: number;
   sent_at: string | null;
   created_at: string;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  emails_sent_before_cancel?: number;
 }
 
 interface Contact {
@@ -86,6 +91,7 @@ export function Campaigns() {
   const [deletingCampaign, setDeletingCampaign] = useState<Campaign | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [sendingNow, setSendingNow] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
 
   // Send modal state
   const [sendMode, setSendMode] = useState<SendMode>("all");
@@ -245,6 +251,63 @@ const handleSendNow = async (campaign: Campaign) => {
   handleQuickSend(campaign);
 };
 
+/**
+ * Handle cancel campaign
+ */
+const handleCancelCampaign = async (campaign: Campaign) => {
+  if (!user) return;
+
+  // Confirmation dialog
+  const confirmed = confirm(
+    `⚠️ Cancel Campaign?\n\n` +
+    `Campaign: "${campaign.name}"\n` +
+    `Status: Sending in progress\n\n` +
+    `This will stop sending to remaining recipients. ` +
+    `Emails already sent cannot be recalled.\n\nContinue?`
+  );
+
+  if (!confirmed) return;
+
+  setCancelling(campaign.id);
+  const toastId = toast.loading('Cancelling campaign...');
+
+  try {
+    // Count how many emails were already sent
+    const { count: emailsSent } = await supabase
+      .from('email_events')
+      .select('*', { count: 'exact', head: true })
+      .eq('campaign_id', campaign.id)
+      .eq('event_type', 'sent');
+
+    // Update campaign to cancelled status
+    const { error } = await supabase
+      .from('campaigns')
+      .update({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+        cancelled_by: user.id,
+        emails_sent_before_cancel: emailsSent || 0
+      })
+      .eq('id', campaign.id);
+
+    if (error) throw error;
+
+    toast.success(
+      `Campaign cancelled. ${emailsSent || 0} email${emailsSent === 1 ? '' : 's'} ${emailsSent === 1 ? 'was' : 'were'} sent before cancellation.`,
+      { id: toastId }
+    );
+
+    // Refresh campaigns list
+    await fetchCampaigns();
+
+  } catch (error: any) {
+    console.error('Failed to cancel campaign:', error);
+    toast.error(error.message || 'Failed to cancel campaign', { id: toastId });
+  } finally {
+    setCancelling(null);
+  }
+};
+
   const fetchContacts = async () => {
     if (!user) return;
 
@@ -397,7 +460,7 @@ const handleSendNow = async (campaign: Campaign) => {
       `Subject: "${campaign.subject}"\n` +
       `Recipients: ${recipientList.length} contact${recipientList.length !== 1 ? 's' : ''}\n` +
       `Mode: ${storedRecipients.sendToMode}\n\n` +
-      `This will send emails immediately. This action cannot be undone.\n\nContinue?`;
+      `This will send emails immediately. You can cancel during sending if needed.\n\nContinue?`;
     
     if (!confirm(confirmMessage)) {
       console.log('❌ User cancelled send');
@@ -435,8 +498,29 @@ const handleSendNow = async (campaign: Campaign) => {
     const sendingDomainId = (campaign as any).content?.sending_domain_id || null;
     console.log('🌐 Sending domain ID:', sendingDomainId);
 
-    // Step 5: Send to each recipient
+    // Step 5: Send to each recipient with cancellation check
     for (let i = 0; i < recipientList.length; i++) {
+      // *** NEW: Check for cancellation every 5 emails ***
+      if (i % 5 === 0) {
+        const { data: currentCampaign } = await supabase
+          .from("campaigns")
+          .select("status")
+          .eq("id", campaign.id)
+          .single();
+
+        if (currentCampaign?.status === "cancelled") {
+          console.log('🛑 Cancellation detected, stopping send...');
+          toast.info(
+            `Campaign cancelled. ${successCount} email${successCount === 1 ? '' : 's'} sent, ` +
+            `${recipientList.length - successCount - failCount} pending cancelled.`,
+            { id: toastId }
+          );
+          setSending(null);
+          await fetchCampaigns(); // Refresh campaign list
+          return;
+        }
+      }
+
       const recipient = recipientList[i];
       console.log(`📧 Sending to recipient ${i + 1}/${recipientList.length}: ${recipient.email}`);
 
@@ -458,8 +542,8 @@ const handleSendNow = async (campaign: Campaign) => {
               to: recipient.email.trim(),
               subject: campaign.subject.trim(),
               html: personalizedHtml.trim(),
-              from_name: campaign.from_name || user?.user_metadata?.full_name || "Mail Wizard",
-              reply_to: campaign.reply_to || user?.email,
+              from_name: (campaign as any).from_name || user?.user_metadata?.full_name || "Mail Wizard",
+              reply_to: (campaign as any).reply_to || user?.email,
               sending_domain_id: sendingDomainId,
               campaign_id: campaign.id,
               contact_id: recipient.id,
@@ -589,61 +673,54 @@ const handleSendNow = async (campaign: Campaign) => {
 
     // BUG FIX #3: If campaign has stored recipients, use those
     if (selectedCampaign?.content?.recipients) {
-      const recipientData = selectedCampaign.content.recipients;
-
-      if (recipientData.sendToMode === 'all') {
-        return contacts.filter((c) => c.status === "active");
-      }
-
-      if (recipientData.sendToMode === 'contacts') {
-        return contacts.filter(
-          (c) => recipientData.selectedContacts.includes(c.id) && c.status === "active"
+      const storedRecipients = (selectedCampaign as any).content.recipients;
+      
+      if (storedRecipients.sendToMode === 'all') {
+        // Send to all active contacts
+        return contacts.filter(c => c.status === 'active');
+      } 
+      
+      if (storedRecipients.sendToMode === 'contacts') {
+        // Send to specific contacts
+        return contacts.filter(c => 
+          storedRecipients.selectedContacts.includes(c.id) && 
+          c.status === 'active'
         );
       }
-
-      if (recipientData.sendToMode === 'groups') {
+      
+      if (storedRecipients.sendToMode === 'groups') {
+        // Send to contacts in selected groups
         const { data: groupMembers, error } = await supabase
-          .from("contact_group_members")
-          .select("contact_id")
-          .in("group_id", recipientData.selectedGroups);
+          .from('contact_group_members')
+          .select('contact_id')
+          .in('group_id', storedRecipients.selectedGroups);
 
         if (error) {
-          console.error("Error fetching group members:", error);
+          console.error('Error fetching group members:', error);
           return [];
         }
 
-        const contactIds = groupMembers.map((gm) => gm.contact_id);
-        return contacts.filter(
-          (c) => contactIds.includes(c.id) && c.status === "active"
+        const contactIds = groupMembers.map(gm => gm.contact_id);
+        return contacts.filter(c => 
+          contactIds.includes(c.id) && 
+          c.status === 'active'
         );
       }
     }
 
-    // Existing logic below for when recipients selected in modal
+    // Fallback to the current modal selection
     if (sendMode === "all") {
       return contacts.filter((c) => c.status === "active");
     }
 
-    if (sendMode === "contacts") {
-      return contacts.filter(
-        (c) => selectedContacts.has(c.id) && c.status === "active"
-      );
-    }
-
     if (sendMode === "groups") {
-      const groupIds = Array.from(selectedGroups);
-      if (groupIds.length === 0) {
-        return [];
-      }
-
       const { data: groupMembers, error } = await supabase
         .from("contact_group_members")
         .select("contact_id")
-        .in("group_id", groupIds);
+        .in("group_id", Array.from(selectedGroups));
 
       if (error) {
         console.error("Error fetching group members:", error);
-        toast.error("Failed to load group members");
         return [];
       }
 
@@ -653,24 +730,9 @@ const handleSendNow = async (campaign: Campaign) => {
       );
     }
 
-    if (sendMode === "mixed") {
-      let recipientSet = new Set<string>();
-
-      if (selectedGroups.size > 0) {
-        const groupIds = Array.from(selectedGroups);
-        const { data: groupMembers } = await supabase
-          .from("contact_group_members")
-          .select("contact_id")
-          .in("group_id", groupIds);
-
-        groupMembers?.forEach((gm) => recipientSet.add(gm.contact_id));
-      }
-
-      selectedContacts.forEach((id) => recipientSet.add(id));
-
-      const recipientIds = Array.from(recipientSet);
+    if (sendMode === "contacts") {
       return contacts.filter(
-        (c) => recipientIds.includes(c.id) && c.status === "active"
+        (c) => selectedContacts.has(c.id) && c.status === "active"
       );
     }
 
@@ -683,19 +745,27 @@ const handleSendNow = async (campaign: Campaign) => {
   };
 
   const handleSendCampaign = async () => {
-  if (!selectedCampaign) return;
-
-  const recipients = await getRecipientList();
-
-  if (recipients.length === 0) {
-    toast.error("No recipients selected");
+  if (!selectedCampaign || !user) {
+    toast.error("No campaign selected");
     return;
   }
 
-  // CRITICAL FIX: Check for HTML in both possible locations
-  const campaignHtml = selectedCampaign.custom_html || selectedCampaign.content?.html;
+  setSending(selectedCampaign.id);
+  setShowSendModal(false);
 
-  // Validate campaign data
+  const toastId = toast.loading("Preparing to send campaign...");
+
+  // Fetch recipients
+  const recipients = await getRecipientList();
+
+  if (recipients.length === 0) {
+    toast.error("No active recipients selected", { id: toastId });
+    setSending(null);
+    return;
+  }
+
+  const campaignHtml = (selectedCampaign as any).custom_html || (selectedCampaign.content as any)?.html;
+
   if (!selectedCampaign.subject || !selectedCampaign.subject.trim()) {
     toast.error("Campaign subject is missing");
     return;
@@ -830,6 +900,14 @@ const handleSendNow = async (campaign: Campaign) => {
       };
     }
 
+    if (campaign.status === "cancelled") {
+      return {
+        icon: <XCircle size={14} />,
+        text: "Cancelled",
+        className: "bg-red-100 text-red-800 border-red-200",
+      };
+    }
+
     return {
       icon: <AlertCircle size={14} />,
       text: "Draft",
@@ -910,6 +988,8 @@ const handleSendNow = async (campaign: Campaign) => {
               <option value="all">All Status</option>
               <option value="draft">Draft</option>
               <option value="scheduled">Scheduled</option>
+              <option value="sending">Sending</option>
+              <option value="cancelled">Cancelled</option>
               <option value="sent">Sent</option>
             </select>
           </div>
@@ -997,6 +1077,10 @@ const handleSendNow = async (campaign: Campaign) => {
                               </div>
                             )}
                           </>
+                        ) : campaign.status === "cancelled" ? (
+                          <div className="text-gray-500">
+                            {campaign.emails_sent_before_cancel || 0} email{campaign.emails_sent_before_cancel === 1 ? '' : 's'} sent before cancellation
+                          </div>
                         ) : (
                           <div className="text-gray-500 italic">
                             Not yet sent
@@ -1008,6 +1092,13 @@ const handleSendNow = async (campaign: Campaign) => {
                       {campaign.sent_at && (
                         <div className="mt-3 text-xs text-gray-500">
                           Sent on {new Date(campaign.sent_at).toLocaleString()}
+                        </div>
+                      )}
+                      
+                      {/* Cancelled Date */}
+                      {campaign.cancelled_at && (
+                        <div className="mt-3 text-xs text-gray-500">
+                          Cancelled on {new Date(campaign.cancelled_at).toLocaleString()}
                         </div>
                       )}
                     </div>
@@ -1066,8 +1157,8 @@ const handleSendNow = async (campaign: Campaign) => {
                         <div className="flex flex-col gap-2">
                           {/* Scheduled Time Display */}
                           <div className="text-sm text-purple font-medium mb-1">
-                            {campaign.scheduled_at && (
-                              <>📅 {new Date(campaign.scheduled_at).toLocaleString()}</>
+                            {(campaign as any).scheduled_at && (
+                              <>📅 {new Date((campaign as any).scheduled_at).toLocaleString()}</>
                             )}
                           </div>
                           {/* Action Buttons */}
@@ -1111,15 +1202,65 @@ const handleSendNow = async (campaign: Campaign) => {
                         </div>
                       )}
 
-                      {/* SENDING STATUS - In Progress */}
+                      {/* SENDING STATUS - In Progress with Cancel Button */}
                       {campaign.status === "sending" && (
                         <div className="flex flex-col gap-2 items-end">
                           <div className="text-sm text-yellow-600 font-medium flex items-center gap-2">
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
                             Sending in progress...
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-500 mb-2">
                             Please wait while emails are being sent
+                          </div>
+                          {/* NEW: Cancel button */}
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            icon={XCircle}
+                            onClick={() => handleCancelCampaign(campaign)}
+                            loading={cancelling === campaign.id}
+                            disabled={cancelling !== null}
+                            className="border-red-500 text-red-600 hover:bg-red-50 w-full"
+                          >
+                            {cancelling === campaign.id ? 'Cancelling...' : 'Cancel Send'}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* CANCELLED STATUS - Show Details */}
+                      {campaign.status === "cancelled" && (
+                        <div className="flex flex-col gap-2 items-end">
+                          <div className="text-sm text-red-600 font-medium flex items-center gap-2">
+                            <XCircle size={16} />
+                            Cancelled
+                          </div>
+                          {campaign.emails_sent_before_cancel !== undefined && (
+                            <div className="text-xs text-gray-600 mb-2">
+                              {campaign.emails_sent_before_cancel} {campaign.emails_sent_before_cancel === 1 ? 'email' : 'emails'} sent before cancellation
+                            </div>
+                          )}
+                          <div className="flex gap-2 w-full">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              icon={Eye}
+                              onClick={() => {
+                                setDetailsCampaign(campaign);
+                                setShowDetailsModal(true);
+                              }}
+                              className="flex-1"
+                            >
+                              View Details
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              icon={Trash2}
+                              onClick={() => setDeletingCampaign(campaign)}
+                              className="border-red-500 text-red-600 hover:bg-red-50"
+                            >
+                              Delete
+                            </Button>
                           </div>
                         </div>
                       )}
@@ -1200,158 +1341,131 @@ const handleSendNow = async (campaign: Campaign) => {
               <div className="p-6 overflow-y-auto flex-1">
                 {/* Send Mode Selection */}
                 <div className="mb-6">
-                  <label className="block text-sm font-medium mb-3">
-                    Send To:
+                  <label className="block text-sm font-medium mb-2">
+                    Send To
                   </label>
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      onClick={() => setSendMode("all")}
-                      className={`px-4 py-2 rounded-full font-medium transition-colors ${
-                        sendMode === "all"
-                          ? "bg-gold text-black"
-                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                      }`}
-                    >
-                      All Contacts ({contacts.length})
-                    </button>
-                    <button
-                      onClick={() => setSendMode("groups")}
-                      className={`px-4 py-2 rounded-full font-medium transition-colors ${
-                        sendMode === "groups"
-                          ? "bg-gold text-black"
-                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                      }`}
-                    >
-                      Select Groups
-                    </button>
-                    <button
-                      onClick={() => setSendMode("contacts")}
-                      className={`px-4 py-2 rounded-full font-medium transition-colors ${
-                        sendMode === "contacts"
-                          ? "bg-gold text-black"
-                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                      }`}
-                    >
-                      Select Contacts
-                    </button>
-                    <button
-                      onClick={() => setSendMode("mixed")}
-                      className={`px-4 py-2 rounded-full font-medium transition-colors ${
-                        sendMode === "mixed"
-                          ? "bg-gold text-black"
-                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                      }`}
-                    >
-                      Mixed Selection
-                    </button>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="sendMode"
+                        value="all"
+                        checked={sendMode === "all"}
+                        onChange={() => setSendMode("all")}
+                        className="w-4 h-4"
+                      />
+                      <span>All Active Contacts ({contacts.length})</span>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="sendMode"
+                        value="groups"
+                        checked={sendMode === "groups"}
+                        onChange={() => setSendMode("groups")}
+                        className="w-4 h-4"
+                      />
+                      <span>Specific Groups</span>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="sendMode"
+                        value="contacts"
+                        checked={sendMode === "contacts"}
+                        onChange={() => setSendMode("contacts")}
+                        className="w-4 h-4"
+                      />
+                      <span>Specific Contacts</span>
+                    </label>
                   </div>
                 </div>
 
-                {/* Groups Selection */}
-                {(sendMode === "groups" || sendMode === "mixed") && (
+                {/* Group Selection */}
+                {sendMode === "groups" && (
                   <div className="mb-6">
-                    <h3 className="font-medium mb-3">
-                      Select Groups ({selectedGroups.size} selected)
-                    </h3>
-                    <div className="border border-gray-300 rounded-lg max-h-60 overflow-y-auto">
-                      {groups.length === 0 ? (
-                        <p className="text-gray-500 p-4 text-center text-sm">
-                          No groups available. Create groups in the Contacts
-                          page.
-                        </p>
-                      ) : (
-                        groups.map((group) => (
-                          <label
-                            key={group.id}
-                            className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedGroups.has(group.id)}
-                              onChange={() => handleToggleGroup(group.id)}
-                              className="mr-3 w-4 h-4"
-                            />
-                            <div className="flex-1">
-                              <p className="font-medium text-sm">
-                                {group.name}
-                              </p>
-                              {group.description && (
-                                <p className="text-xs text-gray-600">
-                                  {group.description}
-                                </p>
-                              )}
-                              <p className="text-xs text-purple-600 mt-1">
-                                {group.contact_count} contacts
-                              </p>
+                    <label className="block text-sm font-medium mb-2">
+                      Select Groups
+                    </label>
+                    <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-3">
+                      {groups.map((group) => (
+                        <label
+                          key={group.id}
+                          className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedGroups.has(group.id)}
+                            onChange={() => handleToggleGroup(group.id)}
+                            className="w-4 h-4"
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium">{group.name}</div>
+                            <div className="text-sm text-gray-500">
+                              {group.contact_count} contacts
                             </div>
-                          </label>
-                        ))
-                      )}
+                          </div>
+                        </label>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* Individual Contacts Selection */}
-                {(sendMode === "contacts" || sendMode === "mixed") && (
+                {/* Contact Selection */}
+                {sendMode === "contacts" && (
                   <div className="mb-6">
-                    <div className="flex justify-between items-center mb-3">
-                      <h3 className="font-medium">
-                        Select Contacts ({selectedContacts.size} selected)
-                      </h3>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium">
+                        Select Contacts
+                      </label>
                       <button
                         onClick={handleSelectAllContacts}
-                        className="text-sm text-gold hover:text-yellow-600 font-medium"
+                        className="text-sm text-purple hover:text-purple/80"
                       >
                         {selectedContacts.size === contacts.length
                           ? "Deselect All"
                           : "Select All"}
                       </button>
                     </div>
-                    <div className="border border-gray-300 rounded-lg max-h-60 overflow-y-auto">
-                      {contacts.length === 0 ? (
-                        <p className="text-gray-500 p-4 text-center text-sm">
-                          No contacts available
-                        </p>
-                      ) : (
-                        contacts.map((contact) => (
-                          <label
-                            key={contact.id}
-                            className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedContacts.has(contact.id)}
-                              onChange={() => handleToggleContact(contact.id)}
-                              className="mr-3 w-4 h-4"
-                            />
-                            <div className="flex-1">
-                              <p className="font-medium text-sm">
-                                {contact.first_name && contact.last_name
-                                  ? `${contact.first_name} ${contact.last_name}`
-                                  : contact.email}
-                              </p>
-                              {contact.first_name && contact.last_name && (
-                                <p className="text-xs text-gray-600">
-                                  {contact.email}
-                                </p>
-                              )}
+                    <div className="space-y-2 max-h-64 overflow-y-auto border border-gray-300 rounded-lg p-3">
+                      {contacts.map((contact) => (
+                        <label
+                          key={contact.id}
+                          className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedContacts.has(contact.id)}
+                            onChange={() => handleToggleContact(contact.id)}
+                            className="w-4 h-4"
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium">
+                              {contact.first_name || contact.last_name
+                                ? `${contact.first_name || ""} ${
+                                    contact.last_name || ""
+                                  }`.trim()
+                                : "No Name"}
                             </div>
-                          </label>
-                        ))
-                      )}
+                            <div className="text-sm text-gray-500">
+                              {contact.email}
+                            </div>
+                          </div>
+                        </label>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* Recipient Count Preview */}
-                <div className="bg-gold/10 border border-gold rounded-lg p-4">
-                  <p className="text-sm font-medium">
-                    <span className="text-gold font-bold text-lg">
-                      {recipientCount}
-                    </span>{" "}
-                    recipient{recipientCount !== 1 ? "s" : ""} will receive this
-                    campaign
-                  </p>
+                {/* Recipient Count Summary */}
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-blue-900">
+                    <Users size={20} />
+                    <span className="font-semibold">
+                      {recipientCount} recipient{recipientCount !== 1 ? "s" : ""} will receive this
+                      campaign
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -1411,6 +1525,7 @@ const handleSendNow = async (campaign: Campaign) => {
                       <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
                         detailsCampaign.status === 'sent' ? 'bg-green-100 text-green-800' :
                         detailsCampaign.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
+                        detailsCampaign.status === 'cancelled' ? 'bg-red-100 text-red-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
                         {detailsCampaign.status}
