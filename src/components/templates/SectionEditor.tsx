@@ -110,6 +110,7 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(sections.map((s) => s.id))
   );
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null); // ✅ NEW
 
   // Keep all sections expanded by default when sections change
   useEffect(() => {
@@ -186,28 +187,59 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
   }
 
   // ============================================================================
-  // DRAG AND DROP
+  // DRAG AND DROP - ✅ FIXED: Smooth performance
   // ============================================================================
 
-  function handleDragStart(index: number) {
+  function handleDragStart(e: React.DragEvent, index: number) {
     setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
   }
 
   function handleDragOver(e: React.DragEvent, index: number) {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    
+    // ✅ FIX: Only update hover state, don't modify sections array yet
     if (draggedIndex === null || draggedIndex === index) return;
+    
+    setDragOverIndex(index);
+  }
 
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOverIndex(null);
+  }
+
+  function handleDrop(e: React.DragEvent, dropIndex: number) {
+    e.preventDefault();
+    
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    // ✅ FIX: Only commit the reorder on drop, not on every hover
     const newSections = [...sections];
     const draggedSection = newSections[draggedIndex];
+    
+    // Remove from old position
     newSections.splice(draggedIndex, 1);
-    newSections.splice(index, 0, draggedSection);
-
+    
+    // Insert at new position
+    newSections.splice(dropIndex, 0, draggedSection);
+    
+    // Commit the change
     onChange(newSections);
-    setDraggedIndex(index);
+    
+    // Clear drag states
+    setDraggedIndex(null);
+    setDragOverIndex(null);
   }
 
   function handleDragEnd() {
     setDraggedIndex(null);
+    setDragOverIndex(null);
   }
 
   // ============================================================================
@@ -625,14 +657,18 @@ export default function SectionEditor({ sections, onChange }: SectionEditorProps
             <div
               key={section.id}
               draggable
-              onDragStart={() => handleDragStart(index)}
+              onDragStart={(e) => handleDragStart(e, index)}
               onDragOver={(e) => handleDragOver(e, index)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, index)}
               onDragEnd={handleDragEnd}
               className={`
                 bg-white border-2 rounded-lg overflow-hidden transition-all
                 ${
                   draggedIndex === index
                     ? 'border-purple shadow-lg opacity-50'
+                    : dragOverIndex === index
+                    ? 'border-blue-500 shadow-md bg-blue-50'
                     : 'border-black hover:shadow-md'
                 }
               `}
