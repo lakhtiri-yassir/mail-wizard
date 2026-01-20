@@ -1,154 +1,218 @@
 /**
  * ============================================================================
- * DNS Record Row Component
+ * DNS Record Row Component - UPDATED
  * ============================================================================
  * 
- * Purpose: Display individual DNS record with copy-to-clipboard functionality
+ * Displays a single DNS record with copy functionality
  * 
- * Features:
- * - Formatted record display
- * - Copy button for easy copying
- * - Visual feedback on copy
- * - Required/optional indicator
- * - Validation status indicator
- * 
- * Props:
- * - instruction: DNS instruction object with record details
+ * Updates:
+ * - DMARC record highlighting with "Highly Recommended" badge
+ * - Visual emphasis for optional but important records
+ * - Improved copy-to-clipboard UI
  * 
  * ============================================================================
  */
 
 import { useState } from 'react';
-import { Copy, Check, CheckCircle, XCircle } from 'lucide-react';
-import { DNSInstruction } from '../../lib/services/domainService';
-import domainService from '../../lib/services/domainService';
+import { Copy, Check, Info } from 'lucide-react';
+
+interface DNSRecord {
+  type: string;
+  host: string;
+  value: string;
+  ttl: number;
+  valid?: boolean;
+}
+
+interface DNSInstruction {
+  step: number;
+  title: string;
+  description: string;
+  required: boolean;
+  record: DNSRecord;
+}
 
 interface DNSRecordRowProps {
   instruction: DNSInstruction;
 }
 
-/**
- * DNS Record Row Component
- */
 export default function DNSRecordRow({ instruction }: DNSRecordRowProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  
+  const { record } = instruction;
+  const isDMARC = record.host.includes('_dmarc');
+  const isDKIM = record.host.includes('_domainkey');
+  const isSPF = record.type === 'TXT' && (record.host.includes('mail') || record.value.includes('spf'));
 
-  /**
-   * Copies text to clipboard and shows feedback
-   */
-  async function handleCopy(text: string, field: string) {
-    const success = await domainService.copyToClipboard(text, field);
-    
-    if (success) {
+  async function copyToClipboard(text: string, field: string) {
+    try {
+      await navigator.clipboard.writeText(text);
       setCopiedField(field);
-      // Reset after 2 seconds
       setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
     }
   }
 
-  const { record } = instruction;
-
   return (
-    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <h4 className="font-semibold text-gray-900">
-              Step {instruction.step}: {instruction.title}
-            </h4>
-            {instruction.required ? (
-              <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded font-medium">
-                Required
-              </span>
-            ) : (
-              <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">
-                Optional
-              </span>
-            )}
-            {record.valid !== undefined && (
-              record.valid ? (
-                <CheckCircle className="w-4 h-4 text-green-600" />
-              ) : (
-                <XCircle className="w-4 h-4 text-red-600" />
-              )
-            )}
+    <div className={`rounded-lg border-2 p-4 ${
+      isDMARC 
+        ? 'border-purple-300 bg-purple-50' 
+        : instruction.required 
+          ? 'border-red-200 bg-red-50' 
+          : 'border-gray-200 bg-gray-50'
+    }`}>
+      {/* DMARC Badge */}
+      {isDMARC && (
+        <div className="mb-3 flex items-start gap-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg p-3">
+          <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <div className="font-bold text-sm mb-1">⭐ Highly Recommended: DMARC</div>
+            <div className="text-xs opacity-90">
+              Adding this record improves email deliverability by 10-20% and protects your domain from spoofing attacks.
+            </div>
           </div>
-          <p className="text-sm text-gray-600">{instruction.description}</p>
         </div>
-      </div>
+      )}
 
-      {/* DNS Record Details */}
-      <div className="space-y-3 bg-gray-50 rounded-lg p-3">
+      {/* Record Details */}
+      <div className="space-y-3">
         {/* Type */}
-        <div className="grid grid-cols-4 gap-2 text-sm">
-          <div className="font-medium text-gray-700">Type:</div>
-          <div className="col-span-3 font-mono text-gray-900">{record.type}</div>
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-semibold text-gray-600 uppercase">Type</label>
+            <button
+              onClick={() => copyToClipboard(record.type, 'type')}
+              className="text-xs text-purple hover:text-gold flex items-center gap-1"
+            >
+              {copiedField === 'type' ? (
+                <>
+                  <Check size={12} />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy size={12} />
+                  Copy
+                </>
+              )}
+            </button>
+          </div>
+          <code className="block bg-white border border-gray-300 rounded px-3 py-2 text-sm font-mono">
+            {record.type}
+          </code>
         </div>
 
         {/* Host */}
-        <div className="grid grid-cols-4 gap-2 text-sm">
-          <div className="font-medium text-gray-700">Host:</div>
-          <div className="col-span-3 flex items-center gap-2">
-            <code className="flex-1 px-2 py-1 bg-white border border-gray-200 rounded font-mono text-xs break-all">
-              {record.host}
-            </code>
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-semibold text-gray-600 uppercase">Host / Name</label>
             <button
-              onClick={() => handleCopy(record.host, `host-${instruction.step}`)}
-              className="p-1.5 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
-              title="Copy host"
+              onClick={() => copyToClipboard(record.host, 'host')}
+              className="text-xs text-purple hover:text-gold flex items-center gap-1"
             >
-              {copiedField === `host-${instruction.step}` ? (
-                <Check className="w-4 h-4 text-green-600" />
+              {copiedField === 'host' ? (
+                <>
+                  <Check size={12} />
+                  Copied
+                </>
               ) : (
-                <Copy className="w-4 h-4 text-gray-600" />
+                <>
+                  <Copy size={12} />
+                  Copy
+                </>
               )}
             </button>
           </div>
+          <code className="block bg-white border border-gray-300 rounded px-3 py-2 text-sm font-mono break-all">
+            {record.host}
+          </code>
         </div>
 
         {/* Value */}
-        <div className="grid grid-cols-4 gap-2 text-sm">
-          <div className="font-medium text-gray-700">Value:</div>
-          <div className="col-span-3 flex items-center gap-2">
-            <code className="flex-1 px-2 py-1 bg-white border border-gray-200 rounded font-mono text-xs break-all">
-              {record.value}
-            </code>
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-semibold text-gray-600 uppercase">Value / Target</label>
             <button
-              onClick={() => handleCopy(record.value, `value-${instruction.step}`)}
-              className="p-1.5 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
-              title="Copy value"
+              onClick={() => copyToClipboard(record.value, 'value')}
+              className="text-xs text-purple hover:text-gold flex items-center gap-1"
             >
-              {copiedField === `value-${instruction.step}` ? (
-                <Check className="w-4 h-4 text-green-600" />
+              {copiedField === 'value' ? (
+                <>
+                  <Check size={12} />
+                  Copied
+                </>
               ) : (
-                <Copy className="w-4 h-4 text-gray-600" />
+                <>
+                  <Copy size={12} />
+                  Copy
+                </>
               )}
             </button>
           </div>
+          <code className="block bg-white border border-gray-300 rounded px-3 py-2 text-sm font-mono break-all max-h-32 overflow-y-auto">
+            {record.value}
+          </code>
+          {isDKIM && (
+            <p className="text-xs text-blue-700 mt-1">
+              💡 Make sure to copy the entire key (200+ characters)
+            </p>
+          )}
+          {isSPF && (
+            <p className="text-xs text-green-700 mt-1">
+              ✅ This authorizes SendGrid to send emails on your behalf
+            </p>
+          )}
+          {isDMARC && (
+            <p className="text-xs text-purple-700 mt-1">
+              ⭐ This protects your domain and enables email authentication reporting
+            </p>
+          )}
         </div>
 
         {/* TTL */}
-        <div className="grid grid-cols-4 gap-2 text-sm">
-          <div className="font-medium text-gray-700">TTL:</div>
-          <div className="col-span-3 font-mono text-gray-900">
-            {record.ttl} seconds (or Automatic)
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-semibold text-gray-600 uppercase">TTL</label>
+            <button
+              onClick={() => copyToClipboard(record.ttl.toString(), 'ttl')}
+              className="text-xs text-purple hover:text-gold flex items-center gap-1"
+            >
+              {copiedField === 'ttl' ? (
+                <>
+                  <Check size={12} />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy size={12} />
+                  Copy
+                </>
+              )}
+            </button>
           </div>
+          <code className="block bg-white border border-gray-300 rounded px-3 py-2 text-sm font-mono">
+            {record.ttl} seconds (or Automatic)
+          </code>
         </div>
       </div>
 
-      {/* Validation Status Message */}
-      {record.valid === false && (
-        <div className="mt-3 text-sm text-red-600 flex items-start gap-2">
-          <XCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>This record has not been detected yet. Please verify it was added correctly.</span>
-        </div>
-      )}
-      
-      {record.valid === true && (
-        <div className="mt-3 text-sm text-green-600 flex items-start gap-2">
-          <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>This record has been verified successfully.</span>
+      {/* Validation Status */}
+      {record.valid !== undefined && (
+        <div className={`mt-3 flex items-center gap-2 text-sm font-medium ${
+          record.valid ? 'text-green-600' : 'text-red-600'
+        }`}>
+          {record.valid ? (
+            <>
+              <Check className="w-4 h-4" />
+              Verified ✓
+            </>
+          ) : (
+            <>
+              <span className="w-4 h-4">⚠️</span>
+              Not yet verified
+            </>
+          )}
         </div>
       )}
     </div>

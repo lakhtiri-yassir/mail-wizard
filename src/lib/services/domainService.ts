@@ -425,6 +425,24 @@ export async function getDNSInstructions(domainId: string): Promise<DNSInstructi
       throw new Error(data.error || 'Failed to fetch DNS instructions');
     }
     
+    // ✅ UPDATED: Add DMARC recommendation to notes if not already present
+    if (data.notes && Array.isArray(data.notes)) {
+      const hasDMARCNote = data.notes.some((note: string) => note.includes('DMARC'));
+      
+      if (!hasDMARCNote) {
+        // Find if there's a DMARC record
+        const hasDMARCRecord = data.records?.some((record: any) => 
+          record.record?.host?.includes('_dmarc')
+        );
+        
+        if (hasDMARCRecord) {
+          data.notes.push(
+            '⭐ DMARC is HIGHLY RECOMMENDED - Improves deliverability by 10-20% and protects your domain from spoofing'
+          );
+        }
+      }
+    }
+    
     console.log('✅ DNS instructions retrieved');
     return data;
     
@@ -674,3 +692,5 @@ export const domainService = {
 };
 
 export default domainService;
+
+
