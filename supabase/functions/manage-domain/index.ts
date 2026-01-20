@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * Edge Function: Domain Management - FIXED ROUTING
+ * Edge Function: Domain Management - FIXED ROUTING + DMARC
  * ============================================================================
  * 
  * Purpose: Handle all custom domain operations including add, verify, list,
@@ -18,6 +18,8 @@
  * Dependencies:
  * - Supabase client for database operations
  * - SendGrid API for domain authentication
+ * 
+ * ✅ UPDATED: Added automatic DMARC record generation for all domains
  * 
  * ============================================================================
  */
@@ -349,6 +351,7 @@ async function fetchExistingSendGridDomain(domain: string) {
 
 /**
  * Extracts ALL DNS records from SendGrid domain object
+ * ✅ UPDATED: Now includes automatic DMARC record generation
  */
 function extractDNSRecords(sendgridDomain: any) {
   // ✅ FIX: Validate input
@@ -431,6 +434,46 @@ function extractDNSRecords(sendgridDomain: any) {
     };
     console.log('✅ mail_cname:', dns_records.mail_cname.data);
   }
+
+  // ============================================================================
+  // ✅ NEW: DMARC Record Generation (SendGrid doesn't provide this)
+  // ============================================================================
+  
+  // Extract root domain for DMARC
+  let rootDomain = '';
+  
+  if (sendgridDomain.domain) {
+    // SendGrid provides the domain directly
+    rootDomain = sendgridDomain.domain;
+  } else if (dns_records.subdomain_spf?.host) {
+    // Extract from SPF host: "mail.example.com" or "em123.example.com" -> "example.com"
+    const hostParts = dns_records.subdomain_spf.host.split('.');
+    if (hostParts.length >= 2) {
+      rootDomain = hostParts.slice(-2).join('.');
+    }
+  } else if (dns_records.mail_cname?.host) {
+    // Extract from mail CNAME host
+    const hostParts = dns_records.mail_cname.host.split('.');
+    if (hostParts.length >= 2) {
+      rootDomain = hostParts.slice(-2).join('.');
+    }
+  }
+
+  if (rootDomain) {
+    dns_records.dmarc = {
+      host: `_dmarc.${rootDomain}`,
+      type: 'TXT',
+      data: `v=DMARC1; p=none; rua=mailto:dmarc@${rootDomain}; ruf=mailto:dmarc@${rootDomain}; fo=1`,
+      valid: false // Will be validated separately if user adds it
+    };
+    console.log('✅ dmarc (generated):', dns_records.dmarc.host);
+  } else {
+    console.warn('⚠️  Could not determine root domain for DMARC generation');
+  }
+
+  // ============================================================================
+  // END OF DMARC GENERATION
+  // ============================================================================
 
   console.log(`📊 Total DNS records extracted: ${Object.keys(dns_records).length}`);
 
@@ -700,6 +743,7 @@ async function removeDefaultDomain(supabase: any, userId: string, domainId: stri
 async function getDNSInstructions(supabase: any, userId: string, domainId: string) {
   console.log(`📖 Getting DNS instructions for domain: ${domainId}`);
 
+  // Get domain from database
   const { data: domain, error } = await supabase
     .from('sending_domains')
     .select('*')
@@ -708,23 +752,47 @@ async function getDNSInstructions(supabase: any, userId: string, domainId: strin
     .single();
 
   if (error || !domain) {
+    console.error('❌ Domain not found:', error);
     throw new Error('Domain not found');
   }
 
+  return formatDNSInstructions(domain);
+}
+
+/**
+ * Formats DNS records into user-friendly instructions
+ */
+function formatDNSInstructions(domain: any) {
   const dnsRecords = domain.dns_records || {};
-  console.log('📋 DNS Records:', JSON.stringify(dnsRecords, null, 2));
+  const instructionsArray: any[] = [];
 
-  const instructionsArray = [];
+  console.log('📝 Formatting DNS instructions for domain:', domain.domain);
 
-  // 1. MX Record (mail_server)
+  // 1. MX Record (mail_server) or Mail CNAME
+  if (dnsRecords.mail_cname?.data) {
+    instructionsArray.push({
+      step: instructionsArray.length + 1,
+      title: 'Add CNAME Record (Mail)',
+      description: 'Links your mail subdomain to SendGrid',
+      required: true,
+      record: {
+        type: (dnsRecords.mail_cname.type || 'CNAME').toUpperCase(),
+        host: dnsRecords.mail_cname.host,
+        value: dnsRecords.mail_cname.data,
+        ttl: 300,
+        valid: dnsRecords.mail_cname.valid || false
+      }
+    });
+  }
+
   if (dnsRecords.mail_server?.data) {
     instructionsArray.push({
       step: instructionsArray.length + 1,
-      title: 'Add MX Record',
-      description: 'Mail exchange record for receiving emails',
+      title: 'Add MX Record (Mail Server)',
+      description: 'Routes email through SendGrid servers',
       required: true,
       record: {
-        type: (dnsRecords.mail_server.type || 'MX').toUpperCase(), // Convert to uppercase
+        type: (dnsRecords.mail_server.type || 'MX').toUpperCase(),
         host: dnsRecords.mail_server.host,
         value: dnsRecords.mail_server.data,
         ttl: 300,
@@ -741,7 +809,7 @@ async function getDNSInstructions(supabase: any, userId: string, domainId: strin
       description: 'Authorizes SendGrid to send emails on your behalf',
       required: true,
       record: {
-        type: (dnsRecords.subdomain_spf.type || 'TXT').toUpperCase(), // Convert to uppercase
+        type: (dnsRecords.subdomain_spf.type || 'TXT').toUpperCase(),
         host: dnsRecords.subdomain_spf.host,
         value: dnsRecords.subdomain_spf.data,
         ttl: 300,
@@ -758,7 +826,7 @@ async function getDNSInstructions(supabase: any, userId: string, domainId: strin
       description: 'DKIM signature for email authentication',
       required: true,
       record: {
-        type: (dnsRecords.dkim.type || 'TXT').toUpperCase(), // Convert to uppercase
+        type: (dnsRecords.dkim.type || 'TXT').toUpperCase(),
         host: dnsRecords.dkim.host,
         value: dnsRecords.dkim.data,
         ttl: 300,
@@ -801,12 +869,12 @@ async function getDNSInstructions(supabase: any, userId: string, domainId: strin
     });
   }
 
-  // 4. DMARC Record (optional)
+  // 4. DMARC Record (highly recommended but not required for verification)
   if (dnsRecords.dmarc?.data) {
     instructionsArray.push({
       step: instructionsArray.length + 1,
       title: 'Add TXT Record (DMARC)',
-      description: 'Policy for handling authentication failures (optional)',
+      description: 'Policy for handling authentication failures (highly recommended)',
       required: false,
       record: {
         type: 'TXT',
@@ -837,9 +905,10 @@ async function getDNSInstructions(supabase: any, userId: string, domainId: strin
     status: domain.verification_status,
     records: instructionsArray,
     notes: [
-      'Add all DNS records to your domain registrar',
-      'DNS propagation takes 5 minutes to 48 hours',
-      'Click "Verify Domain" after adding all records'
+      '⏱️ DNS changes can take 30 minutes to 48 hours to propagate globally',
+      '🔒 Don\'t delete existing MX records if you receive emails on this domain',
+      '✅ Double-check all values before saving to avoid delivery issues',
+      '⭐ DMARC is HIGHLY RECOMMENDED - Improves deliverability by 10-20% and protects your domain from spoofing'
     ]
   };
 }

@@ -7,6 +7,9 @@
  * 
  * Updates:
  * - DMARC record highlighting with "Highly Recommended" badge
+ * - Gold text color for DMARC (not white)
+ * - No emoji in DMARC badge
+ * - No verification status shown for DMARC
  * - Visual emphasis for optional but important records
  * - Improved copy-to-clipboard UI
  * 
@@ -62,13 +65,13 @@ export default function DNSRecordRow({ instruction }: DNSRecordRowProps) {
           ? 'border-red-200 bg-red-50' 
           : 'border-gray-200 bg-gray-50'
     }`}>
-      {/* DMARC Badge */}
+      {/* DMARC Badge - Gold text, no emoji */}
       {isDMARC && (
-        <div className="mb-3 flex items-start gap-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg p-3">
-          <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <div className="mb-3 flex items-start gap-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg p-3">
+          <Info className="w-5 h-5 flex-shrink-0 mt-0.5 text-gold" />
           <div className="flex-1">
-            <div className="font-bold text-sm mb-1">⭐ Highly Recommended: DMARC</div>
-            <div className="text-xs opacity-90">
+            <div className="font-bold text-sm mb-1 text-gold">Highly Recommended: DMARC</div>
+            <div className="text-xs text-gold opacity-90">
               Adding this record improves email deliverability by 10-20% and protects your domain from spoofing attacks.
             </div>
           </div>
@@ -132,7 +135,7 @@ export default function DNSRecordRow({ instruction }: DNSRecordRowProps) {
         {/* Value */}
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="text-xs font-semibold text-gray-600 uppercase">Value / Target</label>
+            <label className="text-xs font-semibold text-gray-600 uppercase">Value / Points To</label>
             <button
               onClick={() => copyToClipboard(record.value, 'value')}
               className="text-xs text-purple hover:text-gold flex items-center gap-1"
@@ -197,8 +200,8 @@ export default function DNSRecordRow({ instruction }: DNSRecordRowProps) {
         </div>
       </div>
 
-      {/* Validation Status */}
-      {record.valid !== undefined && (
+      {/* Validation Status - Hidden for DMARC */}
+      {!isDMARC && record.valid !== undefined && (
         <div className={`mt-3 flex items-center gap-2 text-sm font-medium ${
           record.valid ? 'text-green-600' : 'text-red-600'
         }`}>
