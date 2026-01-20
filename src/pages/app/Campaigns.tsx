@@ -750,17 +750,11 @@ const handleCancelCampaign = async (campaign: Campaign) => {
     return;
   }
 
-  setSending(selectedCampaign.id);
-  setShowSendModal(false);
-
-  const toastId = toast.loading("Preparing to send campaign...");
-
-  // Fetch recipients
+  // Fetch recipients first
   const recipients = await getRecipientList();
 
   if (recipients.length === 0) {
-    toast.error("No active recipients selected", { id: toastId });
-    setSending(null);
+    toast.error("No active recipients selected");
     return;
   }
 
