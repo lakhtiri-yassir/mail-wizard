@@ -463,7 +463,7 @@ function extractDNSRecords(sendgridDomain: any) {
     dns_records.dmarc = {
       host: `_dmarc.${rootDomain}`,
       type: 'TXT',
-      data: `v=DMARC1; p=none; rua=mailto:dmarc@${rootDomain}; ruf=mailto:dmarc@${rootDomain}; fo=1`,
+      data: `v=DMARC1; p=none;`,
       valid: false // Will be validated separately if user adds it
     };
     console.log('✅ dmarc (generated):', dns_records.dmarc.host);
@@ -869,12 +869,12 @@ function formatDNSInstructions(domain: any) {
     });
   }
 
-  // 4. DMARC Record (highly recommended but not required for verification)
+  // 4. DMARC Record (recommended for email authentication)
   if (dnsRecords.dmarc?.data) {
     instructionsArray.push({
       step: instructionsArray.length + 1,
       title: 'Add TXT Record (DMARC)',
-      description: 'Policy for handling authentication failures (highly recommended)',
+      description: 'Email authentication policy (recommended)',
       required: false,
       record: {
         type: 'TXT',
@@ -908,7 +908,7 @@ function formatDNSInstructions(domain: any) {
       '⏱️ DNS changes can take 30 minutes to 48 hours to propagate globally',
       '🔒 Don\'t delete existing MX records if you receive emails on this domain',
       '✅ Double-check all values before saving to avoid delivery issues',
-      '⭐ DMARC is HIGHLY RECOMMENDED - Improves deliverability by 10-20% and protects your domain from spoofing'
+      '⭐ DMARC is recommended for better email authentication and domain protection'
     ]
   };
 }

@@ -70,9 +70,9 @@ export default function DNSRecordRow({ instruction }: DNSRecordRowProps) {
         <div className="mb-3 flex items-start gap-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg p-3">
           <Info className="w-5 h-5 flex-shrink-0 mt-0.5 text-gold" />
           <div className="flex-1">
-            <div className="font-bold text-sm mb-1 text-gold">Highly Recommended: DMARC</div>
+            <div className="font-bold text-sm mb-1 text-gold">Recommended: DMARC</div>
             <div className="text-xs text-gold opacity-90">
-              Adding this record improves email deliverability by 10-20% and protects your domain from spoofing attacks.
+              Adding this record helps protect your domain from email spoofing.
             </div>
           </div>
         </div>
@@ -168,7 +168,7 @@ export default function DNSRecordRow({ instruction }: DNSRecordRowProps) {
           )}
           {isDMARC && (
             <p className="text-xs text-purple-700 mt-1">
-              ⭐ This protects your domain and enables email authentication reporting
+              ⭐ This protects your domain from spoofing
             </p>
           )}
         </div>
