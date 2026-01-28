@@ -5,7 +5,7 @@
  * Provides utilities for plan gating and upgrade prompting.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { PLAN_LIMITS, PlanFeatures, planHasFeature, getMinimumPlanForFeature } from '../config/planLimits';
 
@@ -20,36 +20,42 @@ interface Profile {
 }
 
 /**
- * Fetch user profile with plan information
- */
-async function fetchProfile(): Promise<Profile | null> {
-  const { data: { user } } = await supabase.auth.getUser();
-  
-  if (!user) return null;
-
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, plan_type, subscription_status, stripe_customer_id, stripe_subscription_id')
-    .eq('id', user.id)
-    .single();
-
-  if (error) {
-    console.error('Error fetching profile:', error);
-    return null;
-  }
-
-  return data as Profile;
-}
-
-/**
  * Custom hook for plan limits and feature access
  */
 export function usePlanLimits() {
-  const { data: profile, isLoading } = useQuery({
-    queryKey: ['profile'],
-    queryFn: fetchProfile,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  async function fetchProfile() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        setIsLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, plan_type, subscription_status, stripe_customer_id, stripe_subscription_id')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        console.error('Error fetching profile:', error);
+      } else {
+        setProfile(data as Profile);
+      }
+    } catch (error) {
+      console.error('Error in fetchProfile:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   const currentPlan: PlanType = profile?.plan_type || 'free';
   const limits = PLAN_LIMITS[currentPlan];
@@ -144,15 +150,21 @@ export function usePlanLimits() {
  * Hook for fetching usage metrics
  */
 export function useUsageMetrics() {
-  const { data: profile } = useQuery({
-    queryKey: ['profile'],
-    queryFn: fetchProfile,
-  });
+  const [usage, setUsage] = useState({ emails_sent: 0, storage_used: 0 });
+  const [isLoading, setIsLoading] = useState(true);
 
-  const { data: usage, isLoading } = useQuery({
-    queryKey: ['usage-metrics', profile?.id],
-    queryFn: async () => {
-      if (!profile) return null;
+  useEffect(() => {
+    fetchUsage();
+  }, []);
+
+  async function fetchUsage() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        setIsLoading(false);
+        return;
+      }
 
       const now = new Date();
       const currentMonth = now.getMonth() + 1;
@@ -161,24 +173,25 @@ export function useUsageMetrics() {
       const { data, error } = await supabase
         .from('usage_metrics')
         .select('emails_sent, storage_used')
-        .eq('user_id', profile.id)
+        .eq('user_id', user.id)
         .eq('month', currentMonth)
         .eq('year', currentYear)
         .single();
 
       if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
         console.error('Error fetching usage:', error);
-        return null;
+      } else {
+        setUsage(data || { emails_sent: 0, storage_used: 0 });
       }
-
-      return data || { emails_sent: 0, storage_used: 0 };
-    },
-    enabled: !!profile,
-    staleTime: 60 * 1000, // 1 minute
-  });
+    } catch (error) {
+      console.error('Error in fetchUsage:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   return {
-    usage: usage || { emails_sent: 0, storage_used: 0 },
+    usage,
     isLoading,
   };
 }
