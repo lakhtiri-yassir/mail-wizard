@@ -1,14 +1,26 @@
+/**
+ * STRIPE WEBHOOK EDGE FUNCTION
+ * 
+ * Handles Stripe webhook events for subscription lifecycle:
+ * - checkout.session.completed: Upgrade user to paid plan
+ * - customer.subscription.updated: Update subscription status
+ * - customer.subscription.deleted: Downgrade to free plan
+ * - invoice.payment_succeeded: Record successful payment
+ * - invoice.payment_failed: Handle payment failure
+ */
+
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@14';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Stripe-Signature',
 };
 
 Deno.serve(async (req: Request) => {
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 200,
@@ -17,45 +29,108 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // Get Stripe configuration
     const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
     const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
-    
+
     if (!stripeKey || !webhookSecret) {
-      throw new Error('Stripe keys not configured');
+      throw new Error('Stripe configuration missing');
     }
 
+    // Initialize Stripe
     const stripe = new Stripe(stripeKey, {
       apiVersion: '2023-10-16',
     });
 
-    const signature = req.headers.get('stripe-signature')!;
+    // Verify webhook signature
+    const signature = req.headers.get('stripe-signature');
+    if (!signature) {
+      throw new Error('Missing stripe-signature header');
+    }
+
     const body = await req.text();
     
-    const event = stripe.webhooks.constructEvent(
-      body,
-      signature,
-      webhookSecret
-    );
+    let event: Stripe.Event;
+    try {
+      event = stripe.webhooks.constructEvent(
+        body,
+        signature,
+        webhookSecret
+      );
+    } catch (err: any) {
+      console.error('Webhook signature verification failed:', err.message);
+      return new Response(
+        JSON.stringify({ error: `Webhook Error: ${err.message}` }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
 
+    console.log('Received webhook event:', event.type);
+
+    // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Handle different event types
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.metadata?.user_id;
-        const plan = session.metadata?.plan;
+        const planType = session.metadata?.plan_type;
 
-        if (userId && plan) {
+        console.log('Checkout completed:', { userId, planType, sessionId: session.id });
+
+        if (!userId || !planType) {
+          console.error('Missing metadata in checkout session');
+          break;
+        }
+
+        // Update user profile with subscription details
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            plan_type: planType,
+            stripe_subscription_id: session.subscription as string,
+            subscription_status: 'active',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', userId);
+
+        if (updateError) {
+          console.error('Error updating profile:', updateError);
+        } else {
+          console.log('Successfully upgraded user to plan:', planType);
+        }
+
+        // TODO: Send welcome email for paid plan
+        break;
+      }
+
+      case 'customer.subscription.created': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId = subscription.customer as string;
+
+        console.log('Subscription created:', subscription.id);
+
+        // Find user by stripe_customer_id
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('stripe_customer_id', customerId)
+          .single();
+
+        if (profile) {
           await supabase
             .from('profiles')
             .update({
-              plan_type: plan,
-              stripe_subscription_id: session.subscription as string,
-              subscription_status: 'active',
+              stripe_subscription_id: subscription.id,
+              subscription_status: subscription.status,
+              updated_at: new Date().toISOString(),
             })
-            .eq('id', userId);
+            .eq('id', profile.id);
+
+          console.log('Subscription linked to user:', profile.id);
         }
         break;
       }
@@ -64,6 +139,9 @@ Deno.serve(async (req: Request) => {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = subscription.customer as string;
 
+        console.log('Subscription updated:', subscription.id, 'Status:', subscription.status);
+
+        // Find user by stripe_customer_id
         const { data: profile } = await supabase
           .from('profiles')
           .select('id')
@@ -71,12 +149,19 @@ Deno.serve(async (req: Request) => {
           .single();
 
         if (profile) {
-          await supabase
+          const { error: updateError } = await supabase
             .from('profiles')
             .update({
               subscription_status: subscription.status,
+              updated_at: new Date().toISOString(),
             })
             .eq('id', profile.id);
+
+          if (updateError) {
+            console.error('Error updating subscription status:', updateError);
+          } else {
+            console.log('Updated subscription status for user:', profile.id);
+          }
         }
         break;
       }
@@ -85,6 +170,9 @@ Deno.serve(async (req: Request) => {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = subscription.customer as string;
 
+        console.log('Subscription deleted:', subscription.id);
+
+        // Find user and downgrade to free plan
         const { data: profile } = await supabase
           .from('profiles')
           .select('id')
@@ -92,13 +180,21 @@ Deno.serve(async (req: Request) => {
           .single();
 
         if (profile) {
-          await supabase
+          const { error: downgradeError } = await supabase
             .from('profiles')
             .update({
               plan_type: 'free',
               subscription_status: 'canceled',
+              stripe_subscription_id: null,
+              updated_at: new Date().toISOString(),
             })
             .eq('id', profile.id);
+
+          if (downgradeError) {
+            console.error('Error downgrading user:', downgradeError);
+          } else {
+            console.log('Downgraded user to free plan:', profile.id);
+          }
         }
         break;
       }
@@ -107,6 +203,9 @@ Deno.serve(async (req: Request) => {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
 
+        console.log('Payment succeeded:', invoice.id, 'Amount:', invoice.amount_paid);
+
+        // Find user and record invoice
         const { data: profile } = await supabase
           .from('profiles')
           .select('id')
@@ -114,15 +213,60 @@ Deno.serve(async (req: Request) => {
           .single();
 
         if (profile && invoice.id) {
-          await supabase.from('invoices').insert({
-            user_id: profile.id,
-            stripe_invoice_id: invoice.id,
-            amount: invoice.amount_paid,
-            status: invoice.status || 'paid',
-          });
+          // Insert invoice record
+          const { error: invoiceError } = await supabase
+            .from('invoices')
+            .insert({
+              user_id: profile.id,
+              stripe_invoice_id: invoice.id,
+              amount: invoice.amount_paid,
+              status: invoice.status || 'paid',
+            });
+
+          if (invoiceError) {
+            console.error('Error recording invoice:', invoiceError);
+          } else {
+            console.log('Invoice recorded for user:', profile.id);
+          }
         }
         break;
       }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+
+        console.log('Payment failed:', invoice.id);
+
+        // Find user and update subscription status
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('stripe_customer_id', customerId)
+          .single();
+
+        if (profile) {
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({
+              subscription_status: 'past_due',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', profile.id);
+
+          if (updateError) {
+            console.error('Error updating payment status:', updateError);
+          } else {
+            console.log('Marked subscription as past_due for user:', profile.id);
+          }
+        }
+
+        // TODO: Send payment failed notification email
+        break;
+      }
+
+      default:
+        console.log('Unhandled event type:', event.type);
     }
 
     return new Response(
@@ -134,7 +278,7 @@ Deno.serve(async (req: Request) => {
         },
       }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error processing webhook:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
