@@ -16,6 +16,13 @@ export const useStripeCheckout = () => {
         throw new Error('Not authenticated');
       }
 
+      // Get user ID
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error('User not found');
+      }
+
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-checkout`;
 
       const response = await fetch(apiUrl, {
@@ -24,16 +31,21 @@ export const useStripeCheckout = () => {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ 
+          plan,
+          user_id: user.id  // Add user_id here
+        }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create checkout session');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create checkout session');
       }
 
       const { url } = await response.json();
       window.location.href = url;
     } catch (err: any) {
+      console.error('Checkout error:', err);
       setError(err.message);
       setLoading(false);
     }
