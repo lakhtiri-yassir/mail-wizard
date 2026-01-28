@@ -5,6 +5,8 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAuth } from '../../contexts/AuthContext';
 import { useStripeCheckout } from '../../hooks/useStripeCheckout';
+import { useStripePortal } from '../../hooks/useStripePortal';
+import { usePlanLimits } from '../../hooks/usePlanLimits';
 import DomainsContent from '../../components/settings/DomainsContent';
 import SecurityContent from '../../components/settings/SecurityContent';
 import { supabase } from '../../lib/supabase';
@@ -21,6 +23,8 @@ export const Settings = () => {
   const { profile, setProfile } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const { createCheckoutSession, loading: checkoutLoading } = useStripeCheckout();
+  const { openPortal, loading: portalLoading, error: portalError } = useStripePortal();
+  const { currentPlan } = usePlanLimits();
   
   // Form state
   const [fullName, setFullName] = useState(profile?.full_name || '');
@@ -198,9 +202,26 @@ export const Settings = () => {
                         Your {profile?.plan_type.replace('_', ' ')} subscription is active.
                       </p>
                     </div>
-                    <Button variant="secondary" size="md">
-                      Manage Subscription
+                    
+                    {portalError && (
+                      <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                        {portalError}
+                      </div>
+                    )}
+                    
+                    <Button 
+                      variant="secondary" 
+                      size="md"
+                      onClick={openPortal}
+                      loading={portalLoading}
+                      disabled={portalLoading}
+                    >
+                      {portalLoading ? 'Opening Portal...' : 'Manage Subscription'}
                     </Button>
+                    
+                    <p className="text-xs text-gray-500">
+                      Update payment method, view invoices, or cancel subscription
+                    </p>
                   </div>
                 )}
               </div>

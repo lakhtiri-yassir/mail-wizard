@@ -75,40 +75,50 @@ export const SignupPage = () => {
     }
 
     try {
+      // Store selected plan in localStorage before signup
+      if (selectedPlan !== 'free') {
+        localStorage.setItem('pending_plan', selectedPlan);
+      }
+
       // Create account with signUp from AuthContext
       await signUp(email, password, fullName);
       
-      // Get the newly created user
+      // If email verification is required, user will be redirected to verify email
+      // The selected plan is stored and will be processed after login
+      
+      // If no email verification required (auto-confirm), process immediately
       const { data: { user } } = await supabase.auth.getUser();
       
-      if (!user) {
-        throw new Error('Failed to create account');
-      }
-
-      // If free plan, navigate to dashboard
-      if (selectedPlan === 'free') {
-        navigate('/app/dashboard');
-      } else {
-        // For paid plans, create Stripe checkout session
-        const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
-          'stripe-checkout',
-          {
-            body: {
-              plan: selectedPlan,
-              user_id: user.id,
-            },
-          }
-        );
-
-        if (checkoutError) throw checkoutError;
-
-        if (checkoutData?.url) {
-          // Redirect to Stripe checkout
-          window.location.href = checkoutData.url;
+      if (user && user.email_confirmed_at) {
+        // Email already confirmed, process checkout immediately
+        if (selectedPlan === 'free') {
+          localStorage.removeItem('pending_plan');
+          navigate('/app/dashboard');
         } else {
-          throw new Error('Failed to create checkout session');
+          // Create Stripe checkout session
+          const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
+            'stripe-checkout',
+            {
+              body: {
+                plan: selectedPlan,
+                user_id: user.id,
+              },
+            }
+          );
+
+          if (checkoutError) throw checkoutError;
+
+          if (checkoutData?.url) {
+            localStorage.removeItem('pending_plan');
+            window.location.href = checkoutData.url;
+          } else {
+            throw new Error('Failed to create checkout session');
+          }
         }
       }
+      // If user exists but email not confirmed, they'll be redirected by AuthContext
+      // and pending_plan will be processed after they verify and login
+      
     } catch (err: any) {
       setError(err.message || 'Failed to sign up');
       setLoading(false);
