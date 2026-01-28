@@ -1,6 +1,6 @@
 /**
  * Email Verification with OTP Code
- * FIXED: Prevents duplicate verification attempts
+ * FIXED: Redirects to dashboard after verification and handles pending plan checkout
  */
 
 import { useState, useEffect, useRef } from 'react';
@@ -16,8 +16,8 @@ export default function VerifyEmailOTPPage() {
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [email, setEmail] = useState('');
-  const [verified, setVerified] = useState(false); // Track if already verified
-  const verifyingRef = useRef(false); // Prevent duplicate calls
+  const [verified, setVerified] = useState(false);
+  const verifyingRef = useRef(false);
 
   useEffect(() => {
     const stateEmail = location.state?.email;
@@ -35,7 +35,6 @@ export default function VerifyEmailOTPPage() {
   }, [location, navigate]);
 
   const handleVerify = async (code: string) => {
-    // Prevent duplicate submissions
     if (verifyingRef.current || verified || loading) {
       return;
     }
@@ -58,19 +57,56 @@ export default function VerifyEmailOTPPage() {
       if (error) throw error;
 
       if (data.user) {
-        setVerified(true); // Mark as verified
+        setVerified(true);
         toast.success('Email verified successfully! 🎉', {
           duration: 4000,
         });
         
-        setTimeout(() => {
-          navigate('/login');
-        }, 1000);
+        // Check if there's a pending plan
+        const pendingPlan = localStorage.getItem('pending_plan');
+        
+        if (pendingPlan && pendingPlan !== 'free') {
+          // User selected paid plan - redirect to checkout
+          toast.loading('Redirecting to checkout...', { duration: 2000 });
+          
+          setTimeout(async () => {
+            try {
+              const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
+                'stripe-checkout',
+                {
+                  body: {
+                    plan: pendingPlan,
+                    user_id: data.user.id,
+                  },
+                }
+              );
+
+              if (checkoutError) throw checkoutError;
+
+              if (checkoutData?.url) {
+                localStorage.removeItem('pending_plan');
+                window.location.href = checkoutData.url;
+              } else {
+                throw new Error('Failed to create checkout session');
+              }
+            } catch (error) {
+              console.error('Checkout error:', error);
+              localStorage.removeItem('pending_plan');
+              toast.error('Failed to start checkout. Redirecting to dashboard...');
+              setTimeout(() => navigate('/app/dashboard'), 1000);
+            }
+          }, 1000);
+        } else {
+          // Free plan or no pending plan - go to dashboard
+          localStorage.removeItem('pending_plan');
+          setTimeout(() => {
+            navigate('/app/dashboard');
+          }, 1000);
+        }
       }
     } catch (error: any) {
       console.error('OTP verification error:', error);
       
-      // Only show error if not already verified
       if (!verified) {
         if (error.message?.includes('expired')) {
           toast.error('Code has expired. Please request a new one.');
@@ -108,7 +144,6 @@ export default function VerifyEmailOTPPage() {
         duration: 5000,
       });
       
-      // Reset verification state so user can try new code
       setVerified(false);
       setOtp('');
     } catch (error: any) {
