@@ -127,6 +127,7 @@ Deno.serve(async (req: Request) => {
         },
       ],
       mode: 'subscription',
+      allow_promotion_codes: true,  // Enable coupon code field
       success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/checkout/cancel`,
       metadata: {

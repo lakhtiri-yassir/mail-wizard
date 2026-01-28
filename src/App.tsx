@@ -5,6 +5,7 @@ import { AdminAuthProvider, useAdminAuth } from './contexts/AdminAuthContext';
 import { LandingPage } from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
+import { AuthCallback } from './pages/auth/AuthCallback';
 
 // Password Reset Pages
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -87,6 +88,7 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/verify-email-otp" element={<VerifyEmailOTPPage />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
 
             {/* Password Reset Routes */}
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />

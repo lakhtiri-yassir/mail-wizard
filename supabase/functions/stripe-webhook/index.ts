@@ -52,7 +52,7 @@ Deno.serve(async (req: Request) => {
     
     let event: Stripe.Event;
     try {
-      event = stripe.webhooks.constructEvent(
+      event = await stripe.webhooks.constructEventAsync(
         body,
         signature,
         webhookSecret
