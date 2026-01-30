@@ -149,18 +149,35 @@ Deno.serve(async (req: Request) => {
           .single();
 
         if (profile) {
+          // Get the price ID from the subscription to determine plan type
+          const priceId = subscription.items.data[0]?.price.id;
+          const proPriceId = Deno.env.get('STRIPE_PRO_PRICE_ID');
+          const proPlusPriceId = Deno.env.get('STRIPE_PRO_PLUS_PRICE_ID');
+
+          // Determine plan type based on price ID
+          let planType: 'free' | 'pro' | 'pro_plus' = 'free';
+          
+          if (priceId === proPriceId) {
+            planType = 'pro';
+          } else if (priceId === proPlusPriceId) {
+            planType = 'pro_plus';
+          }
+
+          console.log('Detected plan change to:', planType, 'from price:', priceId);
+
           const { error: updateError } = await supabase
             .from('profiles')
             .update({
+              plan_type: planType, // Update plan type based on new price
               subscription_status: subscription.status,
               updated_at: new Date().toISOString(),
             })
             .eq('id', profile.id);
 
           if (updateError) {
-            console.error('Error updating subscription status:', updateError);
+            console.error('Error updating subscription:', updateError);
           } else {
-            console.log('Updated subscription status for user:', profile.id);
+            console.log('Updated subscription for user:', profile.id, 'New plan:', planType);
           }
         }
         break;
