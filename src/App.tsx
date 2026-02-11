@@ -10,6 +10,8 @@ import { AuthCallback } from './pages/auth/AuthCallback';
 // Legal Pages
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import { TermsOfServicePage } from './pages/TermsOfServicePage';
+import { AcceptableUsePolicyPage } from './pages/AcceptableUsePolicyPage';
+import { GDPRDPAPage } from './pages/GDPRDPAPage';
 
 // Password Reset Pages
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -97,6 +99,8 @@ function App() {
             {/* Legal Pages */}
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+            <Route path="/acceptable-use-policy" element={<AcceptableUsePolicyPage />} />
+            <Route path="/gdpr-dpa" element={<GDPRDPAPage />} />
 
             {/* Password Reset Routes */}
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
