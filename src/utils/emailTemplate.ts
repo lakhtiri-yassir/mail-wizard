@@ -171,8 +171,8 @@ export function generateEmailTemplate(
 
               <!-- Unsubscribe Link (CAN-SPAM Compliant) -->
               <p style="margin: 10px 0 0 0; color: #666666; font-size: 12px; line-height: 1.5; font-family: Arial, Helvetica, sans-serif;">
-                If you no longer wish to receive emails from us, you can 
-                <a href="{{UNSUBSCRIBE_URL}}" style="color: #f3ba42; text-decoration: underline;">unsubscribe here</a>.
+                If you no longer wish to receive emails from us, 
+                <a href="{{UNSUBSCRIBE_URL}}" style="color: #f3ba42; text-decoration: underline;">click here to unsubscribe</a>.
               </p>
 
               <!-- Copyright -->

@@ -1,14 +1,12 @@
 /**
  * ============================================================================
- * UPDATED: Edge Function - Send Email with Unsubscribe Support
+ * FIXED: Edge Function - Send Email with Unsubscribe Support
  * ============================================================================
  * 
- * UPDATES:
- * 1. Added HMAC-SHA256 token generation for unsubscribe links
- * 2. Generates unique unsubscribe URLs for each recipient
- * 3. Replaces {{UNSUBSCRIBE_URL}} merge tag in email content
- * 4. Maintains all existing customArgs for webhook tracking
- * 5. CAN-SPAM compliant email sending
+ * CRITICAL FIX:
+ * - Added comprehensive debugging for merge tag replacement
+ * - Ensures UNSUBSCRIBE_URL is properly replaced in HTML
+ * - Validates that the unsubscribe link is actually in the final email
  * 
  * ============================================================================
  */
@@ -73,16 +71,23 @@ async function generateUnsubscribeToken(
 
 /**
  * Helper: Replace personalization fields in text
+ * CRITICAL: Handles both {{key}} and {{MERGE:key}} formats
  */
 function replacePersonalizationFields(text: string, fields: Record<string, any>): string {
   let result = text;
+  
   for (const [key, value] of Object.entries(fields)) {
-    // Handle both {{key}} and {{MERGE:key}} formats
-    const regex1 = new RegExp(`{{${key}}}`, 'g');
-    const regex2 = new RegExp(`{{MERGE:${key}}}`, 'g');
-    result = result.replace(regex1, value || '');
-    result = result.replace(regex2, value || '');
+    const stringValue = String(value || '');
+    
+    // Handle {{key}} format (case insensitive)
+    const regex1 = new RegExp(`\\{\\{${key}\\}\\}`, 'gi');
+    result = result.replace(regex1, stringValue);
+    
+    // Handle {{MERGE:key}} format (case insensitive)
+    const regex2 = new RegExp(`\\{\\{MERGE:${key}\\}\\}`, 'gi');
+    result = result.replace(regex2, stringValue);
   }
+  
   return result;
 }
 
@@ -131,8 +136,8 @@ serve(async (req) => {
       text,
       reply_to,
       from_name,
-      campaign_id,      // ← CRITICAL: Must be present
-      contact_id,       // ← CRITICAL: Must be present
+      campaign_id,
+      contact_id,
       sending_domain_id,
       personalization = {}
     } = await req.json();
@@ -224,6 +229,7 @@ serve(async (req) => {
         );
         unsubscribeUrl = `${APP_URL}/unsubscribe?token=${unsubscribeToken}`;
         console.log(`🔗 Generated unsubscribe URL for contact ${contact_id}`);
+        console.log(`   URL: ${unsubscribeUrl.substring(0, 60)}...`);
       } catch (error) {
         console.error('⚠️ Failed to generate unsubscribe token:', error);
         // Continue without unsubscribe link - better than failing the send
@@ -231,6 +237,13 @@ serve(async (req) => {
     } else {
       console.warn('⚠️ Missing contact_id or campaign_id - cannot generate unsubscribe link');
     }
+
+    // ========================================================================
+    // 📝 DEBUG: CHECK ORIGINAL HTML
+    // ========================================================================
+    console.log('\n🔍 PRE-PERSONALIZATION DEBUG:');
+    console.log(`   Original HTML contains {{UNSUBSCRIBE_URL}}: ${html.includes('{{UNSUBSCRIBE_URL}}')} `);
+    console.log(`   Original HTML length: ${html.length} characters`);
 
     // ========================================================================
     // 📝 APPLY PERSONALIZATION WITH UNSUBSCRIBE URL
@@ -241,7 +254,7 @@ serve(async (req) => {
       email: to,
       company: personalization.company || '',
       ...personalization,
-      // System merge tags
+      // System merge tags - CRITICAL: These must be here
       UNSUBSCRIBE_URL: unsubscribeUrl,
       VIEW_IN_BROWSER_URL: `${APP_URL}/campaigns/${campaign_id || 'view'}`,
       FROM_EMAIL: fromEmail,
@@ -249,13 +262,37 @@ serve(async (req) => {
       CURRENT_YEAR: new Date().getFullYear().toString()
     };
 
+    console.log('\n🔧 PERSONALIZATION DATA:');
+    console.log(`   UNSUBSCRIBE_URL value: ${enhancedPersonalization.UNSUBSCRIBE_URL || '(empty)'}`);
+    console.log(`   Total merge fields: ${Object.keys(enhancedPersonalization).length}`);
+
+    // Replace merge tags
     const personalizedHtml = replacePersonalizationFields(html, enhancedPersonalization);
     const personalizedText = text ? replacePersonalizationFields(text, enhancedPersonalization) : '';
     const personalizedSubject = replacePersonalizationFields(subject, enhancedPersonalization);
 
-    // Verify unsubscribe link is present (CAN-SPAM compliance check)
-    if (unsubscribeUrl && !personalizedHtml.includes(unsubscribeUrl)) {
-      console.warn('⚠️ Warning: Email does not contain unsubscribe link (CAN-SPAM violation risk)');
+    // ========================================================================
+    // 🔍 DEBUG: VERIFY REPLACEMENT WORKED
+    // ========================================================================
+    console.log('\n🔍 POST-PERSONALIZATION DEBUG:');
+    console.log(`   Personalized HTML length: ${personalizedHtml.length} characters`);
+    console.log(`   Contains {{UNSUBSCRIBE_URL}} (should be false): ${personalizedHtml.includes('{{UNSUBSCRIBE_URL}}')} `);
+    
+    if (unsubscribeUrl) {
+      const hasActualUrl = personalizedHtml.includes(unsubscribeUrl);
+      console.log(`   Contains actual unsubscribe URL (should be true): ${hasActualUrl}`);
+      
+      if (hasActualUrl) {
+        console.log('✅ SUCCESS: Unsubscribe URL successfully injected into email HTML');
+      } else if (personalizedHtml.includes('{{UNSUBSCRIBE_URL}}')) {
+        console.error('❌ CRITICAL ERROR: {{UNSUBSCRIBE_URL}} merge tag was NOT replaced!');
+        console.error('   This means the replacePersonalizationFields function is not working correctly');
+      } else {
+        console.warn('⚠️ Warning: Email does not contain unsubscribe link (CAN-SPAM violation risk)');
+        console.warn('   The template may not have {{UNSUBSCRIBE_URL}} placeholder');
+      }
+    } else {
+      console.warn('⚠️ No unsubscribe URL generated - skipping validation');
     }
 
     // ========================================================================
