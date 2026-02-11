@@ -59,10 +59,10 @@ export const Hero = () => {
         <div className="mt-16 relative">
           <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent z-10 pointer-events-none" />
           <div className="border-2 border-black rounded-2xl overflow-hidden shadow-2xl animate-fade-in bg-gradient-to-br from-purple/5 via-white to-gold/5">
-            <div className="p-12 sm:p-20 aspect-video flex items-center justify-center">
-              {/* Extra Large Logo */}
-              <div className="animate-fade-in">
-                <Logo size="xl" />
+            <div className="py-20 px-8 sm:py-32 sm:px-12 flex items-center justify-center">
+              {/* Massive Logo - Custom size using className */}
+              <div className="animate-fade-in w-full max-w-4xl">
+                <Logo size="xl" className="!w-full" />
               </div>
             </div>
           </div>

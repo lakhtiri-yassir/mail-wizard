@@ -5,7 +5,7 @@
  * Each template includes:
  * - Sections array for drag-and-drop editing
  * - Settings for styling customization
- * - Generated HTML for backward compatibility
+ * - Footer section with unsubscribe link (CAN-SPAM compliant)
  */
 
 import type { Section } from '../components/templates/SectionEditor';
@@ -83,11 +83,26 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           content: {
             text: 'Questions? Just reply to this email - we\'re here to help!'
           }
+        },
+        {
+          id: 'footer-1',
+          type: 'footer',
+          content: {
+            companyName: 'Your Company',
+            companyAddress: '123 Business St, City, State 12345',
+            socialLinks: {
+              facebook: '',
+              linkedin: '',
+              website: ''
+            },
+            showUnsubscribe: true,
+            footerText: '© 2024 Your Company. All rights reserved.'
+          }
         }
       ],
       settings: {
         companyName: 'Your Company',
-        backgroundColor: '#F5F5F5',
+        backgroundColor: '#F0F4FF',
         textColor: '#333333',
         linkColor: '#f3ba42',
         fontFamily: 'DM Sans, sans-serif'
@@ -97,8 +112,8 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
   {
     id: 'newsletter',
     name: 'Newsletter',
-    category: 'newsletter',
-    description: 'Monthly or weekly newsletter template',
+    category: 'marketing',
+    description: 'Monthly newsletter template',
     is_locked: true,
     content: {
       sections: [
@@ -107,35 +122,21 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           type: 'header',
           content: {
             title: 'Monthly Newsletter',
-            subtitle: 'Your dose of updates and insights'
+            subtitle: 'Your latest updates'
           }
         },
         {
           id: 'text-1',
           type: 'text',
           content: {
-            text: 'Hello {{MERGE:first_name}},\n\nWelcome to this month\'s newsletter! Here\'s what\'s new and exciting.'
+            text: 'Hi {{MERGE:first_name}},\n\nHere are this month\'s highlights and updates from our team.'
           }
         },
         {
           id: 'text-2',
           type: 'text',
           content: {
-            text: '📰 Top Stories This Month\n\nDiscover the latest trends, updates, and insights from our team.'
-          }
-        },
-        {
-          id: 'divider-1',
-          type: 'divider',
-          content: {
-            dividerColor: '#E5E7EB'
-          }
-        },
-        {
-          id: 'text-3',
-          type: 'text',
-          content: {
-            text: '🎯 Featured Content\n\nCheck out our most popular articles and resources from this month.'
+            text: '📰 Latest News\n• Update 1: New feature launched\n• Update 2: Community spotlight\n• Update 3: Upcoming events'
           }
         },
         {
@@ -143,56 +144,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           type: 'button',
           content: {
             buttonText: 'Read More',
-            buttonUrl: 'https://example.com/blog',
-            buttonColor: '#57377d'
-          }
-        }
-      ],
-      settings: {
-        companyName: 'Your Company',
-        backgroundColor: '#FFFFFF',
-        textColor: '#333333',
-        linkColor: '#57377d',
-        fontFamily: 'DM Sans, sans-serif'
-      }
-    }
-  },
-  {
-    id: 'product-announcement',
-    name: 'Product Announcement',
-    category: 'marketing',
-    description: 'Announce new products or features',
-    is_locked: true,
-    content: {
-      sections: [
-        {
-          id: 'header-1',
-          type: 'header',
-          content: {
-            title: 'Introducing Something New',
-            subtitle: 'You\'re going to love this'
-          }
-        },
-        {
-          id: 'text-1',
-          type: 'text',
-          content: {
-            text: 'Hey {{MERGE:first_name}},\n\nWe\'ve been working on something special, and today we\'re excited to share it with you!'
-          }
-        },
-        {
-          id: 'text-2',
-          type: 'text',
-          content: {
-            text: '✨ Key Features:\n\n• Lightning-fast performance\n• Intuitive user interface\n• Advanced customization options\n• Seamless integrations'
-          }
-        },
-        {
-          id: 'button-1',
-          type: 'button',
-          content: {
-            buttonText: 'Learn More',
-            buttonUrl: 'https://example.com/new-product',
+            buttonUrl: 'https://example.com/newsletter',
             buttonColor: '#f3ba42'
           }
         },
@@ -207,13 +159,28 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           id: 'text-3',
           type: 'text',
           content: {
-            text: 'Have questions? Our support team is standing by to help you get started.'
+            text: 'Thank you for being part of our community!'
+          }
+        },
+        {
+          id: 'footer-1',
+          type: 'footer',
+          content: {
+            companyName: 'Your Company',
+            companyAddress: '123 Business St, City, State 12345',
+            socialLinks: {
+              facebook: '',
+              linkedin: '',
+              website: ''
+            },
+            showUnsubscribe: true,
+            footerText: '© 2024 Your Company. All rights reserved.'
           }
         }
       ],
       settings: {
         companyName: 'Your Company',
-        backgroundColor: '#F5F5F5',
+        backgroundColor: '#FFFFFF',
         textColor: '#333333',
         linkColor: '#f3ba42',
         fontFamily: 'DM Sans, sans-serif'
@@ -221,10 +188,10 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     }
   },
   {
-    id: 'promotional',
-    name: 'Promotional Email',
+    id: 'promotion',
+    name: 'Promotion',
     category: 'marketing',
-    description: 'Special offers and promotions',
+    description: 'Promotional campaign template',
     is_locked: true,
     content: {
       sections: [
@@ -232,7 +199,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           id: 'header-1',
           type: 'header',
           content: {
-            title: '🎉 Special Offer Inside',
+            title: 'Special Offer Inside!',
             subtitle: 'Limited time only'
           }
         },
@@ -240,14 +207,14 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           id: 'text-1',
           type: 'text',
           content: {
-            text: 'Hi {{MERGE:first_name}},\n\nDon\'t miss out on this exclusive offer - just for you!'
+            text: 'Hi {{MERGE:first_name}},\n\nWe have an exclusive offer just for you!'
           }
         },
         {
           id: 'text-2',
           type: 'text',
           content: {
-            text: '💰 Get 25% Off\n\nUse code SPECIAL25 at checkout\n\nValid until end of month'
+            text: '🎉 Get 20% off your next purchase\n\nUse code: SAVE20 at checkout'
           }
         },
         {
@@ -256,7 +223,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           content: {
             buttonText: 'Shop Now',
             buttonUrl: 'https://example.com/shop',
-            buttonColor: '#ef4444'
+            buttonColor: '#f3ba42'
           }
         },
         {
@@ -270,15 +237,30 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           id: 'text-3',
           type: 'text',
           content: {
-            text: 'Terms and conditions apply. Offer expires soon!'
+            text: 'Offer expires in 7 days. Don\'t miss out!'
+          }
+        },
+        {
+          id: 'footer-1',
+          type: 'footer',
+          content: {
+            companyName: 'Your Company',
+            companyAddress: '123 Business St, City, State 12345',
+            socialLinks: {
+              facebook: '',
+              linkedin: '',
+              website: ''
+            },
+            showUnsubscribe: true,
+            footerText: '© 2024 Your Company. All rights reserved.'
           }
         }
       ],
       settings: {
         companyName: 'Your Company',
-        backgroundColor: '#FEF3C7',
+        backgroundColor: '#FFF9E6',
         textColor: '#333333',
-        linkColor: '#ef4444',
+        linkColor: '#f3ba42',
         fontFamily: 'DM Sans, sans-serif'
       }
     }
@@ -287,7 +269,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'event-invitation',
     name: 'Event Invitation',
     category: 'events',
-    description: 'Invite subscribers to events',
+    description: 'Invite people to your event',
     is_locked: true,
     content: {
       sections: [
@@ -296,21 +278,21 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           type: 'header',
           content: {
             title: 'You\'re Invited!',
-            subtitle: 'Join us for an exclusive event'
+            subtitle: 'Join us for an exciting event'
           }
         },
         {
           id: 'text-1',
           type: 'text',
           content: {
-            text: 'Dear {{MERGE:first_name}},\n\nWe\'re hosting a special event and would love for you to join us.'
+            text: 'Hi {{MERGE:first_name}},\n\nWe would love for you to join us at our upcoming event!'
           }
         },
         {
           id: 'text-2',
           type: 'text',
           content: {
-            text: '📅 Event Details:\n\nDate: [Event Date]\nTime: [Event Time]\nLocation: [Venue or Virtual]\n\nDon\'t miss this opportunity to connect, learn, and grow with us!'
+            text: '📅 Event Details\n• Date: [Insert Date]\n• Time: [Insert Time]\n• Location: [Insert Location]\n• Dress Code: [Insert Code]'
           }
         },
         {
@@ -334,6 +316,21 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           type: 'text',
           content: {
             text: 'Space is limited. Reserve your spot today!'
+          }
+        },
+        {
+          id: 'footer-1',
+          type: 'footer',
+          content: {
+            companyName: 'Your Company',
+            companyAddress: '123 Business St, City, State 12345',
+            socialLinks: {
+              facebook: '',
+              linkedin: '',
+              website: ''
+            },
+            showUnsubscribe: true,
+            footerText: '© 2024 Your Company. All rights reserved.'
           }
         }
       ],
@@ -359,6 +356,21 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           type: 'text',
           content: {
             text: 'Start writing your email here...'
+          }
+        },
+        {
+          id: 'footer-1',
+          type: 'footer',
+          content: {
+            companyName: 'Your Company',
+            companyAddress: '123 Business St, City, State 12345',
+            socialLinks: {
+              facebook: '',
+              linkedin: '',
+              website: ''
+            },
+            showUnsubscribe: true,
+            footerText: '© 2024 Your Company. All rights reserved.'
           }
         }
       ],

@@ -6,6 +6,7 @@
  * - Inline CSS (Gmail-compatible)
  * - Responsive design
  * - Professional structure matching industry standards
+ * - CAN-SPAM compliant unsubscribe links
  */
 
 export interface EmailTemplateSettings {
@@ -134,26 +135,26 @@ export function generateEmailTemplate(
 
               <!-- Social Icons -->
               ${(facebookUrl || linkedinUrl || websiteUrl) ? `
-              <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin-bottom: 20px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin: 0 auto 20px auto;">
                 <tr>
                   ${facebookUrl ? `
-                  <td style="padding: 0 8px;">
-                    <a href="${escapeHtml(facebookUrl)}" target="_blank" style="text-decoration: none;">
-                      <img src="https://cdn-icons-png.flaticon.com/512/733/733547.png" alt="Facebook" width="32" height="32" style="display: block; border: 0;">
+                  <td style="padding: 0 10px;">
+                    <a href="${escapeHtml(facebookUrl)}" target="_blank" style="color: #0066cc; text-decoration: none;">
+                      <img src="https://cdn-icons-png.flaticon.com/512/733/733547.png" alt="Facebook" width="24" height="24" style="display: block; border: 0;">
                     </a>
                   </td>
                   ` : ''}
                   ${linkedinUrl ? `
-                  <td style="padding: 0 8px;">
-                    <a href="${escapeHtml(linkedinUrl)}" target="_blank" style="text-decoration: none;">
-                      <img src="https://cdn-icons-png.flaticon.com/512/733/733561.png" alt="LinkedIn" width="32" height="32" style="display: block; border: 0;">
+                  <td style="padding: 0 10px;">
+                    <a href="${escapeHtml(linkedinUrl)}" target="_blank" style="color: #0066cc; text-decoration: none;">
+                      <img src="https://cdn-icons-png.flaticon.com/512/174/174857.png" alt="LinkedIn" width="24" height="24" style="display: block; border: 0;">
                     </a>
                   </td>
                   ` : ''}
                   ${websiteUrl ? `
-                  <td style="padding: 0 8px;">
-                    <a href="${escapeHtml(websiteUrl)}" target="_blank" style="text-decoration: none;">
-                      <img src="https://cdn-icons-png.flaticon.com/512/1006/1006771.png" alt="Website" width="32" height="32" style="display: block; border: 0;">
+                  <td style="padding: 0 10px;">
+                    <a href="${escapeHtml(websiteUrl)}" target="_blank" style="color: #0066cc; text-decoration: none;">
+                      <img src="https://cdn-icons-png.flaticon.com/512/1006/1006771.png" alt="Website" width="24" height="24" style="display: block; border: 0;">
                     </a>
                   </td>
                   ` : ''}
@@ -161,33 +162,23 @@ export function generateEmailTemplate(
               </table>
               ` : ''}
 
-              <!-- Web Version Link -->
-              <p style="margin: 10px 0; font-size: 12px; color: #666666; font-family: Arial, Helvetica, sans-serif;">
-                <a href="{{VIEW_IN_BROWSER_URL}}" target="_blank" style="color: #0066cc; text-decoration: underline;">View message in browser</a>
-              </p>
-
-              <!-- Sender Info -->
-              ${fromEmail ? `
-              <p style="margin: 10px 0; font-size: 12px; color: #666666; font-family: Arial, Helvetica, sans-serif;">
-                Sent by: <a href="mailto:${escapeHtml(fromEmail)}" style="color: #0066cc; text-decoration: none;">${escapeHtml(fromEmail)}</a>
-              </p>
-              ` : `
-              <p style="margin: 10px 0; font-size: 12px; color: #666666; font-family: Arial, Helvetica, sans-serif;">
-                Sent by: <a href="mailto:{{FROM_EMAIL}}" style="color: #0066cc; text-decoration: none;">{{FROM_EMAIL}}</a>
-              </p>
-              `}
-
-              <!-- Unsubscribe Link -->
-              <p style="margin: 10px 0; font-size: 12px; color: #666666; font-family: Arial, Helvetica, sans-serif;">
-                <a href="{{UNSUBSCRIBE_URL}}" target="_blank" style="color: #666666; text-decoration: underline;">Unsubscribe from these emails</a>
-              </p>
-
-              <!-- Company Address (Optional) -->
+              <!-- Company Address -->
               ${companyAddress ? `
-              <p style="margin: 15px 0 0 0; font-size: 11px; color: #999999; line-height: 1.4; font-family: Arial, Helvetica, sans-serif;">
+              <p style="margin: 0 0 10px 0; color: #666666; font-size: 12px; line-height: 1.5; font-family: Arial, Helvetica, sans-serif;">
                 ${escapeHtml(companyAddress)}
               </p>
               ` : ''}
+
+              <!-- Unsubscribe Link (CAN-SPAM Compliant) -->
+              <p style="margin: 10px 0 0 0; color: #666666; font-size: 12px; line-height: 1.5; font-family: Arial, Helvetica, sans-serif;">
+                If you no longer wish to receive emails from us, you can 
+                <a href="{{UNSUBSCRIBE_URL}}" style="color: #f3ba42; text-decoration: underline;">unsubscribe here</a>.
+              </p>
+
+              <!-- Copyright -->
+              <p style="margin: 15px 0 0 0; color: #999999; font-size: 11px; font-family: Arial, Helvetica, sans-serif;">
+                © ${new Date().getFullYear()} ${escapeHtml(companyName)}. All rights reserved.
+              </p>
 
             </td>
           </tr>

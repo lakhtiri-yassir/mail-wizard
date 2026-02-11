@@ -6,6 +6,8 @@ import { LandingPage } from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { AuthCallback } from './pages/auth/AuthCallback';
+import Unsubscribe from './pages/public/Unsubscribe';
+import Resubscribe from './pages/public/Resubscribe';
 
 // Legal Pages
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
@@ -95,6 +97,8 @@ function App() {
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/verify-email-otp" element={<VerifyEmailOTPPage />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/unsubscribe" element={<Unsubscribe />} />
+            <Route path="/resubscribe" element={<Resubscribe />} />
 
             {/* Legal Pages */}
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
