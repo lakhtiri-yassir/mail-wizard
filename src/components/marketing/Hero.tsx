@@ -1,6 +1,21 @@
+/**
+ * ============================================================================
+ * HERO COMPONENT - Updated with Large Logo
+ * ============================================================================
+ * 
+ * Landing page hero section with headline, CTA buttons, and large logo display.
+ * 
+ * UPDATES:
+ * - Removed dashboard preview mockup
+ * - Now displays large Email Wizard logo as the visual focal point
+ * 
+ * ============================================================================
+ */
+
 import { ArrowRight, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/Button';
+import { Logo } from '../ui/Logo';
 
 export const Hero = () => {
   const navigate = useNavigate();
@@ -40,17 +55,14 @@ export const Hero = () => {
           </div>
         </div>
 
+        {/* Large Logo Display */}
         <div className="mt-16 relative">
           <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent z-10 pointer-events-none" />
-          <div className="border border-black rounded-2xl overflow-hidden shadow-2xl animate-fade-in">
-            <div className="bg-gradient-to-br from-purple/10 to-gold/10 p-12 sm:p-20 aspect-video flex items-center justify-center">
-              <div className="text-center">
-                <div className="inline-block p-6 bg-white border border-black rounded-2xl shadow-lg">
-                  <div className="w-16 h-16 bg-gold rounded-full mx-auto mb-4 flex items-center justify-center">
-                    <CheckCircle size={32} className="text-black" />
-                  </div>
-                  <p className="text-lg font-semibold">Dashboard Preview</p>
-                </div>
+          <div className="border-2 border-black rounded-2xl overflow-hidden shadow-2xl animate-fade-in bg-gradient-to-br from-purple/5 via-white to-gold/5">
+            <div className="p-12 sm:p-20 aspect-video flex items-center justify-center">
+              {/* Extra Large Logo */}
+              <div className="animate-fade-in">
+                <Logo size="xl" />
               </div>
             </div>
           </div>
