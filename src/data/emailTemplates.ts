@@ -1,11 +1,15 @@
 /**
  * Email Templates Data
- * 
+ *
  * Central repository of email templates with section-based structure.
  * Each template includes:
  * - Sections array for drag-and-drop editing
  * - Settings for styling customization
  * - Footer section with unsubscribe link (CAN-SPAM compliant)
+ *
+ * NOTE: Footer company name, address and social links are intentionally
+ * left empty. They are populated at send-time from the user's profile
+ * settings (companyName, companyAddress etc.) via merge tags.
  */
 
 import type { Section } from '../components/templates/SectionEditor';
@@ -26,9 +30,29 @@ export interface EmailTemplate {
       linkColor: string;
       fontFamily: string;
     };
-    html?: string;  // Generated HTML for backward compatibility
+    html?: string; // Generated HTML for backward compatibility
   };
 }
+
+/**
+ * Shared footer section used across all templates.
+ * Company name and address are populated at send-time.
+ */
+const defaultFooter: Section = {
+  id: 'footer-1',
+  type: 'footer',
+  content: {
+    companyName: '',
+    companyAddress: '',
+    socialLinks: {
+      facebook: '',
+      linkedin: '',
+      website: ''
+    },
+    showUnsubscribe: true,
+    footerText: ''
+  }
+};
 
 export const EMAIL_TEMPLATES: EmailTemplate[] = [
   {
@@ -81,27 +105,13 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
           id: 'text-3',
           type: 'text',
           content: {
-            text: 'Questions? Just reply to this email - we\'re here to help!'
+            text: 'Questions? Just reply to this email — we\'re here to help!'
           }
         },
-        {
-          id: 'footer-1',
-          type: 'footer',
-          content: {
-            companyName: 'Your Company',
-            companyAddress: '123 Business St, City, State 12345',
-            socialLinks: {
-              facebook: '',
-              linkedin: '',
-              website: ''
-            },
-            showUnsubscribe: true,
-            footerText: '© 2024 Your Company. All rights reserved.'
-          }
-        }
+        { ...defaultFooter, id: 'footer-1' }
       ],
       settings: {
-        companyName: 'Your Company',
+        companyName: '',
         backgroundColor: '#F0F4FF',
         textColor: '#333333',
         linkColor: '#f3ba42',
@@ -162,24 +172,10 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
             text: 'Thank you for being part of our community!'
           }
         },
-        {
-          id: 'footer-1',
-          type: 'footer',
-          content: {
-            companyName: 'Your Company',
-            companyAddress: '123 Business St, City, State 12345',
-            socialLinks: {
-              facebook: '',
-              linkedin: '',
-              website: ''
-            },
-            showUnsubscribe: true,
-            footerText: '© 2024 Your Company. All rights reserved.'
-          }
-        }
+        { ...defaultFooter, id: 'footer-2' }
       ],
       settings: {
-        companyName: 'Your Company',
+        companyName: '',
         backgroundColor: '#FFFFFF',
         textColor: '#333333',
         linkColor: '#f3ba42',
@@ -240,24 +236,10 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
             text: 'Offer expires in 7 days. Don\'t miss out!'
           }
         },
-        {
-          id: 'footer-1',
-          type: 'footer',
-          content: {
-            companyName: 'Your Company',
-            companyAddress: '123 Business St, City, State 12345',
-            socialLinks: {
-              facebook: '',
-              linkedin: '',
-              website: ''
-            },
-            showUnsubscribe: true,
-            footerText: '© 2024 Your Company. All rights reserved.'
-          }
-        }
+        { ...defaultFooter, id: 'footer-3' }
       ],
       settings: {
-        companyName: 'Your Company',
+        companyName: '',
         backgroundColor: '#FFF9E6',
         textColor: '#333333',
         linkColor: '#f3ba42',
@@ -318,24 +300,10 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
             text: 'Space is limited. Reserve your spot today!'
           }
         },
-        {
-          id: 'footer-1',
-          type: 'footer',
-          content: {
-            companyName: 'Your Company',
-            companyAddress: '123 Business St, City, State 12345',
-            socialLinks: {
-              facebook: '',
-              linkedin: '',
-              website: ''
-            },
-            showUnsubscribe: true,
-            footerText: '© 2024 Your Company. All rights reserved.'
-          }
-        }
+        { ...defaultFooter, id: 'footer-4' }
       ],
       settings: {
-        companyName: 'Your Company',
+        companyName: '',
         backgroundColor: '#F3E8FF',
         textColor: '#333333',
         linkColor: '#8b5cf6',
@@ -358,24 +326,10 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
             text: 'Start writing your email here...'
           }
         },
-        {
-          id: 'footer-1',
-          type: 'footer',
-          content: {
-            companyName: 'Your Company',
-            companyAddress: '123 Business St, City, State 12345',
-            socialLinks: {
-              facebook: '',
-              linkedin: '',
-              website: ''
-            },
-            showUnsubscribe: true,
-            footerText: '© 2024 Your Company. All rights reserved.'
-          }
-        }
+        { ...defaultFooter, id: 'footer-5' }
       ],
       settings: {
-        companyName: 'Your Company',
+        companyName: '',
         backgroundColor: '#FFFFFF',
         textColor: '#333333',
         linkColor: '#f3ba42',
@@ -386,47 +340,41 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
 ];
 
 /**
- * Helper function to get template by ID
+ * Get template by ID
  */
 export function getTemplateById(id: string): EmailTemplate | undefined {
   return EMAIL_TEMPLATES.find(t => t.id === id);
 }
 
 /**
- * Helper function to get templates by category
+ * Get templates by category
  */
 export function getTemplatesByCategory(category: string): EmailTemplate[] {
   return EMAIL_TEMPLATES.filter(t => t.category === category);
 }
 
 /**
- * Helper function to extract editable fields from template
+ * Extract editable field names from template HTML
  */
 export function extractEditableFields(html: string): string[] {
   const regex = /\{\{EDITABLE:(\w+)\}\}/g;
   const fields: string[] = [];
   let match;
-  
   while ((match = regex.exec(html)) !== null) {
     fields.push(match[1]);
   }
-  
   return fields;
 }
 
 /**
- * Helper function to extract merge fields from template
+ * Extract merge field names from template HTML
  */
 export function extractMergeFields(html: string): string[] {
   const regex = /\{\{MERGE:(\w+)\}\}/g;
   const fields: string[] = [];
   let match;
-  
   while ((match = regex.exec(html)) !== null) {
-    if (!fields.includes(match[1])) {
-      fields.push(match[1]);
-    }
+    if (!fields.includes(match[1])) fields.push(match[1]);
   }
-  
   return fields;
 }
