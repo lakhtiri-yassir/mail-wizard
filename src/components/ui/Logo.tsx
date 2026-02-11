@@ -1,51 +1,45 @@
 /**
  * ============================================================================
- * Logo Component - Mail Wizard
+ * Logo Component - Mail Wizard (Updated to Single Image)
  * ============================================================================
  * 
  * PURPOSE:
- * Displays Mail Wizard logo with different variants and sizes
- * 
- * VARIANTS:
- * - icon: Just the wizard icon (for small spaces, collapsed sidebar)
- * - text: Just the text logo (for wide headers without icon)
- * - full: Icon + Text side by side (default, for most contexts)
+ * Displays Mail Wizard logo as a single combined image
  * 
  * SIZES:
- * - sm: 32px height (compact spaces, collapsed sidebar)
- * - md: 40px height (standard sidebar, navigation)
- * - lg: 56px height (page headers, prominent sections)
- * - xl: 72px height (hero sections, landing page)
+ * - sm: 120px width (compact spaces, mobile)
+ * - md: 160px width (standard navigation, sidebar)
+ * - lg: 200px width (page headers, login pages)
+ * - xl: 240px width (hero sections, landing page)
  * 
  * USAGE EXAMPLES:
  * 
- * // Sidebar (expanded)
- * <Logo variant="full" size="md" />
- * 
- * // Sidebar (collapsed)
- * <Logo variant="icon" size="sm" />
- * 
- * // Landing page hero
- * <Logo variant="icon" size="xl" />
+ * // Header navigation
+ * <Logo size="md" onClick={() => navigate('/')} />
  * 
  * // Login page header
- * <Logo variant="full" size="lg" onClick={() => navigate('/')} />
+ * <Logo size="lg" onClick={() => navigate('/')} />
+ * 
+ * // Footer (with white variant)
+ * <Logo size="md" variant="white" />
  * 
  * ============================================================================
  */
 
 import React from 'react';
 
-// Import logo images
-// Note: Adjust paths if your project structure differs
-import wizardIcon from '../../assets/logos/wizard-icon.png';
-import textLogo from '../../assets/logos/mail-wizard-text.png';
+// Import single combined logo
+// Note: This should be the full "Email Wizard" logo as one image
+// Path: public/logos/email-wizard-logo.png (or similar)
+// For now, using placeholder path - update with actual logo path
+const logoPath = '/logos/email-wizard-logo.png';
+const logoWhitePath = '/logos/email-wizard-logo-white.png'; // For dark backgrounds
 
 interface LogoProps {
-  /** Logo display variant */
-  variant?: 'icon' | 'text' | 'full';
   /** Size preset */
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Logo color variant */
+  variant?: 'default' | 'white';
   /** Additional CSS classes */
   className?: string;
   /** Click handler (makes logo clickable) */
@@ -53,78 +47,42 @@ interface LogoProps {
 }
 
 /**
- * Size mapping for different contexts
- * icon: Height of the wizard icon
- * text: Height of the text logo (proportional to icon)
+ * Size mapping - width in pixels
+ * Height will scale automatically to maintain aspect ratio
  */
 const sizeMap = {
-  sm: { icon: 32, text: 20 },  // Compact: collapsed sidebar, mobile
-  md: { icon: 40, text: 24 },  // Standard: expanded sidebar, navigation
-  lg: { icon: 56, text: 34 },  // Large: page headers, login
-  xl: { icon: 72, text: 44 }   // Extra large: hero sections, landing page
+  sm: 120,  // Compact: mobile, small spaces
+  md: 160,  // Standard: navigation, sidebar
+  lg: 200,  // Large: page headers, login
+  xl: 240   // Extra large: hero sections
 };
 
 export const Logo: React.FC<LogoProps> = ({
-  variant = 'full',
   size = 'md',
+  variant = 'default',
   className = '',
   onClick
 }) => {
-  const dimensions = sizeMap[size];
+  const width = sizeMap[size];
   const isClickable = !!onClick;
+  const imageSrc = variant === 'white' ? logoWhitePath : logoPath;
 
-  // Base classes for all variants
+  // Base classes
   const baseClasses = `
+    object-contain
     ${isClickable ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}
     ${className}
   `.trim();
 
-  /**
-   * VARIANT: Icon Only
-   * Best for: Collapsed sidebar, favicons, app icons, mobile navigation
-   */
-  if (variant === 'icon') {
-    return (
-      <img
-        src={wizardIcon}
-        alt="Mail Wizard"
-        className={`object-contain ${baseClasses}`}
-        style={{ 
-          height: `${dimensions.icon}px`, 
-          width: 'auto'
-        }}
-        onClick={onClick}
-      />
-    );
-  }
-
-  /**
-   * VARIANT: Text Only
-   * Best for: Wide headers where icon isn't needed
-   */
-  if (variant === 'text') {
-    return (
-      <img
-        src={textLogo}
-        alt="Mail Wizard"
-        className={`object-contain ${baseClasses}`}
-        style={{ 
-          height: `${dimensions.text}px`, 
-          width: 'auto'
-        }}
-        onClick={onClick}
-      />
-    );
-  }
-
-  /**
-   * VARIANT: Full (Icon + Text)
-   * Best for: Most contexts - sidebar, headers, login pages
-   * Layout: Icon on left, text on right with proper spacing
-   */
   return (
-    <div 
-      className={`flex items-center gap-3 ${baseClasses}`}
+    <img
+      src={imageSrc}
+      alt="Email Wizard"
+      className={baseClasses}
+      style={{ 
+        width: `${width}px`, 
+        height: 'auto'
+      }}
       onClick={onClick}
       role={isClickable ? 'button' : undefined}
       tabIndex={isClickable ? 0 : undefined}
@@ -134,29 +92,7 @@ export const Logo: React.FC<LogoProps> = ({
           onClick?.();
         }
       } : undefined}
-    >
-      {/* Wizard Icon */}
-      <img
-        src={wizardIcon}
-        alt="Mail Wizard Icon"
-        className="object-contain flex-shrink-0"
-        style={{ 
-          height: `${dimensions.icon}px`, 
-          width: 'auto'
-        }}
-      />
-      
-      {/* Text Logo */}
-      <img
-        src={textLogo}
-        alt="Mail Wizard"
-        className="object-contain"
-        style={{ 
-          height: `${dimensions.text}px`, 
-          width: 'auto'
-        }}
-      />
-    </div>
+    />
   );
 };
 
@@ -165,23 +101,18 @@ export const Logo: React.FC<LogoProps> = ({
  * RESPONSIVE USAGE PATTERNS
  * ============================================================================
  * 
- * Mobile-First Approach:
+ * Responsive sizing with Tailwind:
  * 
- * {/* Show icon on mobile, full logo on desktop *\/}
- * <div className="lg:hidden">
- *   <Logo variant="icon" size="sm" />
- * </div>
- * <div className="hidden lg:flex">
- *   <Logo variant="full" size="md" />
- * </div>
- * 
- * Dynamic Sizing:
- * 
- * {/* Responsive size using Tailwind *\/}
  * <Logo 
- *   variant="full" 
  *   size="md"
- *   className="h-8 md:h-10 lg:h-12"
+ *   className="w-32 md:w-40 lg:w-48"
+ * />
+ * 
+ * Dark background usage (Footer):
+ * 
+ * <Logo 
+ *   size="md"
+ *   variant="white"
  * />
  * 
  * ============================================================================

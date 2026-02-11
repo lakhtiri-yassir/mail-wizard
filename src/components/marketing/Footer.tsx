@@ -1,21 +1,22 @@
 /**
  * ============================================================================
- * FOOTER COMPONENT - Updated with Streamlined Navigation
+ * FOOTER COMPONENT - Updated with Single Image Logo
  * ============================================================================
  * 
  * Marketing site footer with simplified navigation and legal links.
+ * Now uses the updated Logo component with white variant for dark background.
  * 
  * SECTIONS:
+ * - Brand with single image logo and social media
  * - Product links (Features, Pricing)
  * - Legal links (Privacy, Terms, Acceptable Use, GDPR DPA)
- * - Social media links
- * - Company branding
  * 
  * ============================================================================
  */
 
-import { Mail, Twitter, Linkedin, Github } from 'lucide-react';
+import { Twitter, Linkedin, Github } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { Logo } from '../ui/Logo';
 
 const footerLinks = {
   product: [
@@ -39,13 +40,15 @@ export const Footer = () => {
             
             {/* Brand and Social */}
             <div className="col-span-1">
-              <div className="flex items-center gap-2 mb-4">
-                <Mail className="w-8 h-8 text-gold" />
-                <span className="text-2xl font-serif font-bold">Email Wizard</span>
+              {/* Logo - White variant for dark background */}
+              <div className="mb-6">
+                <Logo size="md" variant="white" />
               </div>
+              
               <p className="text-sm opacity-80 mb-6">
                 The marketing and automations platform designed to grow your business.
               </p>
+              
               <div className="flex gap-4">
                 <a
                   href="#twitter"
