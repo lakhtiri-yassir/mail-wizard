@@ -7,6 +7,10 @@ import LoginPage from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { AuthCallback } from './pages/auth/AuthCallback';
 
+// Legal Pages
+import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
+import { TermsOfServicePage } from './pages/TermsOfServicePage';
+
 // Password Reset Pages
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
@@ -89,6 +93,10 @@ function App() {
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/verify-email-otp" element={<VerifyEmailOTPPage />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+
+            {/* Legal Pages */}
+            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+            <Route path="/terms-of-service" element={<TermsOfServicePage />} />
 
             {/* Password Reset Routes */}
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />

@@ -1,4 +1,20 @@
+/**
+ * ============================================================================
+ * FOOTER COMPONENT - Updated with Legal Page Links
+ * ============================================================================
+ * 
+ * Marketing site footer with navigation links, social media, and company info.
+ * 
+ * UPDATES:
+ * - Privacy and Terms links now use React Router Link component
+ * - Links navigate to /privacy-policy and /terms-of-service
+ * - Maintains all existing styling and functionality
+ * 
+ * ============================================================================
+ */
+
 import { Mail, Twitter, Linkedin, Github } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const footerLinks = {
   product: [
@@ -20,8 +36,8 @@ const footerLinks = {
     { label: 'Contact', href: '#contact' },
   ],
   legal: [
-    { label: 'Privacy', href: '#privacy' },
-    { label: 'Terms', href: '#terms' },
+    { label: 'Privacy', to: '/privacy-policy', isInternal: true },
+    { label: 'Terms', to: '/terms-of-service', isInternal: true },
     { label: 'Security', href: '#security' },
     { label: 'Cookies', href: '#cookies' },
   ],
@@ -119,12 +135,21 @@ export const Footer = () => {
               <ul className="space-y-2">
                 {footerLinks.legal.map((link) => (
                   <li key={link.label}>
-                    <a
-                      href={link.href}
-                      className="text-sm opacity-80 hover:opacity-100 hover:text-gold transition-all duration-250"
-                    >
-                      {link.label}
-                    </a>
+                    {link.isInternal && link.to ? (
+                      <Link
+                        to={link.to}
+                        className="text-sm opacity-80 hover:opacity-100 hover:text-gold transition-all duration-250"
+                      >
+                        {link.label}
+                      </Link>
+                    ) : (
+                      <a
+                        href={link.href}
+                        className="text-sm opacity-80 hover:opacity-100 hover:text-gold transition-all duration-250"
+                      >
+                        {link.label}
+                      </a>
+                    )}
                   </li>
                 ))}
               </ul>

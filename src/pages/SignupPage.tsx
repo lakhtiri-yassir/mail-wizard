@@ -310,13 +310,13 @@ export const SignupPage = () => {
         <div className="mt-6 text-center text-xs text-gray-500">
           <p>
             By signing up, you agree to our{' '}
-            <a href="#" className="text-gold hover:underline">
+            <Link to="/terms-of-service" className="text-gold hover:underline">
               Terms of Service
-            </a>{' '}
+            </Link>{' '}
             and{' '}
-            <a href="#" className="text-gold hover:underline">
+            <Link to="/privacy-policy" className="text-gold hover:underline">
               Privacy Policy
-            </a>
+            </Link>
           </p>
         </div>
       </div>
