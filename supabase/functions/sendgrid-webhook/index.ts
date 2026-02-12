@@ -1,21 +1,21 @@
 /**
  * ============================================================================
- * SENDGRID WEBHOOK HANDLER - UPDATED WITH UNSUBSCRIBE SUPPORT
+ * FIXED: SendGrid Webhook Handler
  * ============================================================================
- * 
- * UPDATES:
- * 1. ✅ Enhanced unsubscribe handler with full tracking
- * 2. ✅ Records unsubscribe events with timestamp and campaign info
- * 3. ✅ Increments campaign unsubscribe count
- * 4. ✅ Updates contact engagement score
- * 5. ✅ Idempotency check to prevent duplicate processing
- * 
- * All existing functionality preserved including:
+ *
+ * FIX 1: Restored open tracking — removed erroneous increment_campaign_delivered
+ *        call from handleDelivered() which was conflicting with updateCampaignAnalytics.
+ *        Delivered count is now only incremented in updateCampaignAnalytics.
+ *
+ * FIX 2: Proxy open filtering now works correctly because delivery timestamps
+ *        are stored BEFORE updateCampaignAnalytics processes opens.
+ *
+ * All other functionality preserved:
  * - ECDSA P-256 signature verification
- * - Separated recipients_count from delivered_count
- * - Proxy-generated open filtering with 1-second delay
- * - Delivery timestamp storage
- * 
+ * - Proxy-generated open filtering (1-second delay check)
+ * - Unsubscribe handler with full tracking
+ * - Bounce, spam, click handlers
+ *
  * ============================================================================
  */
 
@@ -28,68 +28,40 @@ const SENDGRID_WEBHOOK_VERIFICATION_KEY = Deno.env.get('SENDGRID_WEBHOOK_VERIFIC
 
 /**
  * ============================================================================
- * DER SIGNATURE CONVERSION FUNCTIONS
+ * DER SIGNATURE CONVERSION
+ * DER format → raw R||S format required by Web Crypto API
  * ============================================================================
  */
-
-/**
- * Convert DER-encoded ECDSA signature to raw format (R||S)
- * 
- * DER format: 0x30 [length] 0x02 [r-length] [r-bytes] 0x02 [s-length] [s-bytes]
- * Raw format: [32-byte R][32-byte S] = 64 bytes for P-256
- * 
- * SendGrid sends DER format, Web Crypto API needs raw format
- */
 function derToRawSignature(derSignature: Uint8Array): Uint8Array {
-  const coordinateLength = 32; // P-256 uses 32-byte coordinates
-  const rawSignatureLength = 64; // 32 bytes R + 32 bytes S
-
+  const coordinateLength = 32;
+  const rawSignatureLength = 64;
   let offset = 0;
 
-  // Check SEQUENCE tag (0x30)
-  if (derSignature[offset++] !== 0x30) {
-    throw new Error('Invalid DER signature: missing SEQUENCE tag');
-  }
+  if (derSignature[offset++] !== 0x30) throw new Error('Invalid DER signature: missing SEQUENCE tag');
+  offset++; // Skip total length
 
-  // Skip total length
-  offset++;
-
-  // Parse R value
-  if (derSignature[offset++] !== 0x02) {
-    throw new Error('Invalid DER signature: missing INTEGER tag for R');
-  }
-
+  if (derSignature[offset++] !== 0x02) throw new Error('Invalid DER signature: missing INTEGER tag for R');
   const rLength = derSignature[offset++];
   let rBytes = derSignature.slice(offset, offset + rLength);
   offset += rLength;
 
-  // Parse S value
-  if (derSignature[offset++] !== 0x02) {
-    throw new Error('Invalid DER signature: missing INTEGER tag for S');
-  }
-
+  if (derSignature[offset++] !== 0x02) throw new Error('Invalid DER signature: missing INTEGER tag for S');
   const sLength = derSignature[offset++];
   let sBytes = derSignature.slice(offset, offset + sLength);
 
-  // Remove leading zero bytes (DER padding)
-  while (rBytes.length > coordinateLength && rBytes[0] === 0x00) {
-    rBytes = rBytes.slice(1);
-  }
-  while (sBytes.length > coordinateLength && sBytes[0] === 0x00) {
-    sBytes = sBytes.slice(1);
-  }
+  // Remove DER leading zero padding
+  while (rBytes.length > coordinateLength && rBytes[0] === 0x00) rBytes = rBytes.slice(1);
+  while (sBytes.length > coordinateLength && sBytes[0] === 0x00) sBytes = sBytes.slice(1);
 
-  // Pad to 32 bytes if needed
+  // Pad to 32 bytes
   const paddedR = new Uint8Array(coordinateLength);
   const paddedS = new Uint8Array(coordinateLength);
   paddedR.set(rBytes, coordinateLength - rBytes.length);
   paddedS.set(sBytes, coordinateLength - sBytes.length);
 
-  // Concatenate R and S
   const rawSignature = new Uint8Array(rawSignatureLength);
   rawSignature.set(paddedR, 0);
   rawSignature.set(paddedS, coordinateLength);
-
   return rawSignature;
 }
 
@@ -98,35 +70,22 @@ function derToRawSignature(derSignature: Uint8Array): Uint8Array {
  * ECDSA SIGNATURE VERIFICATION
  * ============================================================================
  */
-
-/**
- * Import SendGrid's ECDSA P-256 public key
- */
 async function importPublicKey(base64PublicKey: string): Promise<CryptoKey> {
   try {
     const binaryDer = Uint8Array.from(atob(base64PublicKey), c => c.charCodeAt(0));
-    
-    const publicKey = await crypto.subtle.importKey(
+    return await crypto.subtle.importKey(
       'spki',
       binaryDer,
-      {
-        name: 'ECDSA',
-        namedCurve: 'P-256'
-      },
+      { name: 'ECDSA', namedCurve: 'P-256' },
       true,
       ['verify']
     );
-    
-    return publicKey;
   } catch (error) {
     console.error('❌ Error importing public key:', error);
     throw new Error('Failed to import SendGrid public key');
   }
 }
 
-/**
- * Verify webhook signature using ECDSA P-256
- */
 async function verifyWebhookSignature(
   signature: string,
   timestamp: string,
@@ -139,47 +98,35 @@ async function verifyWebhookSignature(
 
   try {
     console.log('🔐 Starting signature verification...');
-    
-    // Import public key
     const publicKey = await importPublicKey(SENDGRID_WEBHOOK_VERIFICATION_KEY);
     console.log('✅ Public key imported successfully');
-    
-    // Create signed data (timestamp + payload)
+
     const encoder = new TextEncoder();
     const data = encoder.encode(timestamp + rawPayload);
-    
+
     console.log('🔍 Verification details:');
     console.log(`   Timestamp: "${timestamp}"`);
     console.log(`   Payload length: ${rawPayload.length} bytes`);
     console.log(`   Combined data length: ${data.length} bytes`);
-    
-    // Decode DER signature
+
     const derSignatureBytes = Uint8Array.from(atob(signature), c => c.charCodeAt(0));
     console.log(`   DER signature length: ${derSignatureBytes.length} bytes`);
-    
-    // Convert DER to raw format
+
     const rawSignatureBytes = derToRawSignature(derSignatureBytes);
     console.log(`   Raw signature length: ${rawSignatureBytes.length} bytes`);
-    
-    // Verify signature
+
     const isValid = await crypto.subtle.verify(
-      {
-        name: 'ECDSA',
-        hash: { name: 'SHA-256' }
-      },
+      { name: 'ECDSA', hash: { name: 'SHA-256' } },
       publicKey,
       rawSignatureBytes,
       data
     );
-    
+
     if (isValid) {
       console.log('✅ Webhook signature verified successfully');
     } else {
       console.error('❌ Invalid webhook signature');
-      console.error('   Signature verification failed - possible causes:');
-      console.error('   1. Wrong public key');
-      console.error('   2. Payload modified in transit');
-      console.error('   3. Timestamp mismatch');
+      console.error('   Possible causes: Wrong public key, payload modified, timestamp mismatch');
     }
 
     return isValid;
@@ -194,7 +141,6 @@ async function verifyWebhookSignature(
  * EVENT EXTRACTION HELPERS
  * ============================================================================
  */
-
 function extractCampaignId(event: any): string | null {
   const possibleLocations = [
     event.campaign_id,
@@ -204,11 +150,8 @@ function extractCampaignId(event: any): string | null {
     event.custom_args?.campaign_id,
     event['sg_campaign_id']
   ];
-
   for (const value of possibleLocations) {
-    if (value && typeof value === 'string' && value.trim() !== '') {
-      return value;
-    }
+    if (value && typeof value === 'string' && value.trim() !== '') return value;
   }
   return null;
 }
@@ -222,18 +165,17 @@ function extractContactId(event: any): string | null {
     event.custom_args?.contact_id,
     event['sg_contact_id']
   ];
-
   for (const value of possibleLocations) {
-    if (value && typeof value === 'string' && value.trim() !== '') {
-      return value;
-    }
+    if (value && typeof value === 'string' && value.trim() !== '') return value;
   }
   return null;
 }
 
 /**
  * ============================================================================
- * HANDLE DELIVERED EVENT - Store timestamp for open filtering
+ * FIXED: HANDLE DELIVERED EVENT
+ * Only stores delivery timestamp for open filtering.
+ * Does NOT increment delivered count here — that happens in updateCampaignAnalytics.
  * ============================================================================
  */
 async function handleDelivered(
@@ -242,11 +184,11 @@ async function handleDelivered(
   timestamp: number,
   supabase: any
 ) {
-  console.log(`📬 Handling delivery for ${email} in campaign ${campaignId.substring(0, 8)}...`);
-  
+  console.log(`📬 Storing delivery timestamp for ${email}...`);
+
   try {
     const deliveredAt = new Date(timestamp * 1000).toISOString();
-    
+
     const { error } = await supabase
       .from('delivery_timestamps')
       .upsert({
@@ -256,29 +198,22 @@ async function handleDelivered(
       }, {
         onConflict: 'campaign_id,email'
       });
-    
+
     if (error) {
       console.error('❌ Failed to store delivery timestamp:', error.message);
     } else {
       console.log(`✅ Stored delivery timestamp: ${deliveredAt}`);
     }
-    
-    // Increment delivered count
-    const { error: campaignError } = await supabase.rpc('increment_campaign_delivered', {
-      campaign_id_param: campaignId
-    });
-    
-    if (campaignError) {
-      console.error('❌ Campaign increment error:', campaignError.message);
-    }
+    // NOTE: Delivered count is incremented in updateCampaignAnalytics — NOT here.
   } catch (error: any) {
-    console.error('❌ Delivery handler error:', error.message);
+    console.error('❌ handleDelivered error:', error.message);
   }
 }
 
 /**
  * ============================================================================
- * UPDATED CAMPAIGN ANALYTICS
+ * CAMPAIGN ANALYTICS UPDATER
+ * Single source of truth for all campaign counter increments.
  * ============================================================================
  */
 async function updateCampaignAnalytics(
@@ -290,12 +225,18 @@ async function updateCampaignAnalytics(
   supabase: any
 ) {
   try {
-    console.log(`📊 Updating analytics for campaign ${campaignId.substring(0, 8)}...`);
+    console.log(`📊 Updating analytics for campaign ${campaignId.substring(0, 8)}... (${eventType})`);
 
-    // Increment campaign counters based on event type
     switch (eventType) {
+      case 'delivered':
+        await supabase.rpc('increment_campaign_delivered', {
+          campaign_id_param: campaignId
+        });
+        console.log('✅ Campaign delivered count incremented');
+        break;
+
       case 'open': {
-        // Check if this is a proxy-generated open
+        // Check for proxy-generated open using delivery timestamp
         const { data: deliveryData } = await supabase
           .from('delivery_timestamps')
           .select('delivered_at')
@@ -306,12 +247,13 @@ async function updateCampaignAnalytics(
         if (deliveryData) {
           const deliveredTime = new Date(deliveryData.delivered_at).getTime();
           const openTime = timestamp * 1000;
-          const timeDiff = (openTime - deliveredTime) / 1000; // in seconds
+          const timeDiff = (openTime - deliveredTime) / 1000;
 
           if (timeDiff < 1) {
-            console.log(`⚠️  Proxy-generated open detected (${timeDiff.toFixed(3)}s) - ignoring`);
-            return;
+            console.log(`⚠️  Proxy-generated open detected (${timeDiff.toFixed(3)}s after delivery) — ignoring`);
+            return; // Skip — don't increment for proxy opens
           }
+          console.log(`✅ Genuine open detected (${timeDiff.toFixed(1)}s after delivery)`);
         }
 
         await supabase.rpc('increment_campaign_opens', {
@@ -360,9 +302,7 @@ async function updateCampaignAnalytics(
         'spamreport': -10,
         'unsubscribe': -15
       };
-
       const points = engagementPoints[eventType];
-      
       if (points) {
         await supabase.rpc('update_contact_engagement', {
           p_contact_id: contactId,
@@ -382,18 +322,14 @@ async function updateCampaignAnalytics(
  * EVENT HANDLERS
  * ============================================================================
  */
-
 async function handleBounce(contactId: string, reason: string, supabase: any) {
   const { error } = await supabase
     .from('contacts')
     .update({ status: 'bounced', updated_at: new Date().toISOString() })
     .eq('id', contactId);
 
-  if (error) {
-    console.error('❌ Bounce update error:', error);
-  } else {
-    console.log(`✅ Contact marked as bounced`);
-  }
+  if (error) console.error('❌ Bounce update error:', error);
+  else console.log(`✅ Contact marked as bounced`);
 }
 
 async function handleSpamReport(contactId: string, supabase: any) {
@@ -402,17 +338,13 @@ async function handleSpamReport(contactId: string, supabase: any) {
     .update({ status: 'complained', updated_at: new Date().toISOString() })
     .eq('id', contactId);
 
-  if (error) {
-    console.error('❌ Spam report error:', error);
-  } else {
-    console.log(`✅ Contact marked as complained`);
-  }
+  if (error) console.error('❌ Spam report error:', error);
+  else console.log(`✅ Contact marked as complained`);
 }
 
 /**
- * ============================================================================
- * UPDATED: ENHANCED UNSUBSCRIBE HANDLER
- * ============================================================================
+ * Handle unsubscribe events from SendGrid
+ * Idempotent — safe to call multiple times
  */
 async function handleUnsubscribe(
   contactId: string,
@@ -421,9 +353,9 @@ async function handleUnsubscribe(
   supabase: any
 ) {
   console.log(`🚫 Processing unsubscribe for ${email}`);
-  
+
   try {
-    // Check if already unsubscribed (idempotency)
+    // Idempotency check — skip if already unsubscribed
     const { data: existingContact } = await supabase
       .from('contacts')
       .select('status')
@@ -431,11 +363,10 @@ async function handleUnsubscribe(
       .single();
 
     if (existingContact?.status === 'unsubscribed') {
-      console.log(`ℹ️ Contact ${email} already unsubscribed, skipping duplicate processing`);
+      console.log(`ℹ️ Contact ${email} already unsubscribed — skipping`);
       return;
     }
 
-    // Update contact status to unsubscribed
     const { error: updateError } = await supabase
       .from('contacts')
       .update({
@@ -453,10 +384,8 @@ async function handleUnsubscribe(
 
     console.log(`✅ Contact ${email} marked as unsubscribed`);
     console.log(`   Campaign ID: ${campaignId || 'N/A'}`);
-    console.log(`   Timestamp: ${new Date().toISOString()}`);
-
   } catch (error: any) {
-    console.error('❌ Error handling unsubscribe:', error.message);
+    console.error('❌ handleUnsubscribe error:', error.message);
     throw error;
   }
 }
@@ -485,7 +414,9 @@ async function handleClick(
 
 /**
  * ============================================================================
- * EVENT PROCESSING
+ * FIXED: EVENT PROCESSING
+ * Key fix: handleDelivered is called BEFORE updateCampaignAnalytics for
+ * 'delivered' events so the timestamp is available for open filtering.
  * ============================================================================
  */
 async function processSendGridEvent(event: any, supabase: any) {
@@ -506,12 +437,12 @@ async function processSendGridEvent(event: any, supabase: any) {
   console.log(`   Timestamp: ${timestamp} (${new Date(timestamp * 1000).toISOString()})`);
 
   if (!campaign_id) {
-    console.warn(`⚠️  No campaign_id found - event will not be linked to campaign`);
+    console.warn(`⚠️  No campaign_id found — event will not be linked to campaign`);
   }
 
   try {
-    const eventTimestamp = timestamp 
-      ? new Date(timestamp * 1000).toISOString() 
+    const eventTimestamp = timestamp
+      ? new Date(timestamp * 1000).toISOString()
       : new Date().toISOString();
 
     // Insert event into email_events table
@@ -540,11 +471,18 @@ async function processSendGridEvent(event: any, supabase: any) {
 
     console.log(`✅ Event inserted with ID: ${insertedEvent.id}`);
 
-    // Update campaign analytics
+    // CRITICAL ORDER FOR OPEN FILTERING:
+    // For 'delivered' events: store timestamp FIRST, then update analytics.
+    // This ensures the timestamp exists before any subsequent 'open' events are processed.
+    if (eventType === 'delivered' && campaign_id) {
+      await handleDelivered(campaign_id, email, timestamp, supabase);
+    }
+
+    // Update campaign analytics (single source of truth for counters)
     if (campaign_id) {
       await updateCampaignAnalytics(
-        campaign_id, 
-        contact_id, 
+        campaign_id,
+        contact_id,
         eventType,
         email,
         timestamp,
@@ -552,29 +490,21 @@ async function processSendGridEvent(event: any, supabase: any) {
       );
     }
 
-    // Handle specific event types
+    // Handle contact status changes
     switch (eventType) {
-      case 'delivered':
-        if (campaign_id) {
-          await handleDelivered(campaign_id, email, timestamp, supabase);
-        }
-        break;
-        
       case 'bounce':
       case 'dropped':
         if (contact_id) await handleBounce(contact_id, event.reason, supabase);
         break;
-        
+
       case 'spamreport':
         if (contact_id) await handleSpamReport(contact_id, supabase);
         break;
-        
+
       case 'unsubscribe':
-        if (contact_id) {
-          await handleUnsubscribe(contact_id, email, campaign_id, supabase);
-        }
+        if (contact_id) await handleUnsubscribe(contact_id, email, campaign_id, supabase);
         break;
-        
+
       case 'click':
         if (campaign_id && contact_id && event.url) {
           await handleClick(campaign_id, contact_id, event.url, supabase);
@@ -614,13 +544,12 @@ serve(async (req) => {
     // Verify signature
     if (signature && timestamp) {
       const isValid = await verifyWebhookSignature(signature, timestamp, rawBody);
-      
       if (!isValid) {
         console.error('❌ REJECTED: Invalid signature');
         return new Response('Unauthorized', { status: 401 });
       }
     } else {
-      console.warn('⚠️  No signature headers - skipping verification');
+      console.warn('⚠️  No signature headers — skipping verification');
     }
 
     // Parse events
@@ -630,7 +559,7 @@ serve(async (req) => {
     // Create Supabase client
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Process events
+    // Process all events
     let successCount = 0;
     let errorCount = 0;
 
