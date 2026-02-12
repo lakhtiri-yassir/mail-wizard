@@ -1,13 +1,27 @@
 /**
  * ============================================================================
- * FIXED: Edge Function - Send Email with Unsubscribe Support
+ * SEND EMAIL EDGE FUNCTION
  * ============================================================================
- * 
- * CRITICAL FIX:
- * - Added comprehensive debugging for merge tag replacement
- * - Ensures UNSUBSCRIBE_URL is properly replaced in HTML
- * - Validates that the unsubscribe link is actually in the final email
- * 
+ *
+ * ROOT CAUSE FIX — WHY UNSUBSCRIBE NEVER WORKED:
+ *
+ * The unsubscribe URL was built as:
+ *   `${APP_URL}/unsubscribe?token=...`
+ *
+ * Where APP_URL = Deno.env.get('APP_URL') || 'http://localhost:5173'
+ *
+ * Since APP_URL was never set as a Supabase secret, every email had a
+ * localhost link. Even if the link was correct, it pointed to the React
+ * page on Netlify — which then had to make a second fetch() to Supabase.
+ *
+ * THE FIX:
+ * Build the unsubscribe URL to point DIRECTLY to the Supabase Edge Function:
+ *   `${SUPABASE_URL}/functions/v1/unsubscribe?token=...`
+ *
+ * SUPABASE_URL is auto-injected by Supabase — always correct, no config needed.
+ * The Edge Function already returns a complete HTML page (success/error).
+ * The React /unsubscribe page is now only a fallback for direct navigation.
+ *
  * ============================================================================
  */
 
@@ -16,13 +30,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // Environment variables
 const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY') || '';
+// SUPABASE_URL is auto-injected by Supabase — always available, never empty
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const SHARED_SENDING_DOMAIN = 'mail.mailwizard.io';
-
-// Unsubscribe configuration
 const UNSUBSCRIBE_TOKEN_SECRET = Deno.env.get('UNSUBSCRIBE_TOKEN_SECRET') || '';
-const APP_URL = Deno.env.get('APP_URL') || Deno.env.get('VITE_APP_URL') || 'http://localhost:5173';
 
 // CORS headers
 const corsHeaders = {
@@ -38,7 +50,7 @@ async function generateUnsubscribeSignature(data: string, secret: string): Promi
   const encoder = new TextEncoder();
   const keyData = encoder.encode(secret);
   const messageData = encoder.encode(data);
-  
+
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
     keyData,
@@ -46,16 +58,23 @@ async function generateUnsubscribeSignature(data: string, secret: string): Promi
     false,
     ['sign']
   );
-  
+
   const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
   const hashArray = Array.from(new Uint8Array(signature));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
- * Generate unsubscribe token for a specific contact and campaign
+ * Generate unsubscribe token for a specific contact and campaign.
+ * The resulting URL points DIRECTLY to the Supabase Edge Function —
+ * no Netlify/React page involved, no second network call needed.
+ *
+ * @param contactId   - UUID of the contact
+ * @param campaignId  - UUID of the campaign
+ * @param secret      - UNSUBSCRIBE_TOKEN_SECRET env var
+ * @returns           - Full unsubscribe URL pointing to this Edge Function's sibling
  */
-async function generateUnsubscribeToken(
+async function generateUnsubscribeUrl(
   contactId: string,
   campaignId: string,
   secret: string
@@ -63,50 +82,43 @@ async function generateUnsubscribeToken(
   const timestamp = Date.now();
   const data = `${contactId}:${campaignId}:${timestamp}`;
   const signature = await generateUnsubscribeSignature(data, secret);
-  const token = `${data}:${signature}`;
-  
-  // Base64 encode for URL safety
-  return btoa(token);
+  const token = btoa(`${data}:${signature}`);
+
+  // Point directly to the Supabase unsubscribe Edge Function.
+  // SUPABASE_URL is auto-injected — always correct, no env var needed.
+  const url = `${SUPABASE_URL}/functions/v1/unsubscribe?token=${token}`;
+
+  console.log(`🔗 Unsubscribe URL domain: ${SUPABASE_URL}/functions/v1/unsubscribe`);
+  return url;
 }
 
 /**
- * Helper: Replace personalization fields in text
- * CRITICAL: Handles both {{key}} and {{MERGE:key}} formats
+ * Replace {{KEY}} and {{MERGE:KEY}} personalization fields in text
  */
 function replacePersonalizationFields(text: string, fields: Record<string, any>): string {
   let result = text;
-  
   for (const [key, value] of Object.entries(fields)) {
     const stringValue = String(value || '');
-    
-    // Handle {{key}} format (case insensitive)
-    const regex1 = new RegExp(`\\{\\{${key}\\}\\}`, 'gi');
-    result = result.replace(regex1, stringValue);
-    
-    // Handle {{MERGE:key}} format (case insensitive)
-    const regex2 = new RegExp(`\\{\\{MERGE:${key}\\}\\}`, 'gi');
-    result = result.replace(regex2, stringValue);
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'gi'), stringValue);
+    result = result.replace(new RegExp(`\\{\\{MERGE:${key}\\}\\}`, 'gi'), stringValue);
   }
-  
   return result;
 }
 
 /**
- * Helper: Generate username from email
+ * Generate username from email/metadata for the From address
  */
 function generateUsername(userEmail: string, userMetadata: any): string {
   if (userMetadata?.username) {
     return userMetadata.username.toLowerCase().replace(/[^a-z0-9]/g, '');
   }
-  const emailUsername = userEmail.split('@')[0];
-  return emailUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return userEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 /**
  * Main handler
  */
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders, status: 200 });
   }
@@ -116,19 +128,16 @@ serve(async (req) => {
     console.log('📧 EMAIL SEND REQUEST');
     console.log('='.repeat(80) + '\n');
 
-    // Validate unsubscribe token secret
     if (!UNSUBSCRIBE_TOKEN_SECRET) {
       console.error('❌ UNSUBSCRIBE_TOKEN_SECRET not configured');
       throw new Error('Server configuration error: Missing unsubscribe token secret');
     }
 
-    // Get authorization header
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
       throw new Error('Missing authorization header');
     }
 
-    // Parse request body
     const {
       to,
       subject,
@@ -142,35 +151,27 @@ serve(async (req) => {
       personalization = {}
     } = await req.json();
 
-    // Log request data
     console.log(`📨 To: ${to}`);
     console.log(`📝 Subject: ${subject}`);
     console.log(`🎯 Campaign ID: ${campaign_id || 'N/A'}`);
     console.log(`👤 Contact ID: ${contact_id || 'N/A'}`);
-    console.log(`🌐 Requested Domain ID: ${sending_domain_id || 'N/A (will use default)'}`);
-    console.log(`🔗 App URL: ${APP_URL}`);
+    console.log(`🌐 SUPABASE_URL: ${SUPABASE_URL}`);
 
-    // Create Supabase client
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      global: {
-        headers: { Authorization: authHeader }
-      }
+      global: { headers: { Authorization: authHeader } }
     });
 
-    // Get user
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
       throw new Error('User not authenticated');
     }
 
-    console.log(`👤 User ID: ${user.id}`);
-    console.log(`📧 User Email: ${user.email}`);
+    console.log(`👤 User: ${user.email}`);
 
     // Determine sender email
     let fromEmail = '';
     let fromName = from_name || 'Email Wizard';
 
-    // Try to get custom domain if specified
     if (sending_domain_id) {
       const { data: customDomain } = await supabase
         .from('sending_domains')
@@ -181,15 +182,12 @@ serve(async (req) => {
         .single();
 
       if (customDomain) {
-        const username = generateUsername(user.email!, user.user_metadata);
-        fromEmail = `${username}@${customDomain.domain}`;
+        fromEmail = `${generateUsername(user.email!, user.user_metadata)}@${customDomain.domain}`;
         console.log(`✅ Using specified custom domain: ${customDomain.domain}`);
       }
     }
 
-    // If no custom domain, try default
     if (!fromEmail) {
-      console.log('🔍 Looking for user default domain...');
       const { data: defaultDomain } = await supabase
         .from('sending_domains')
         .select('*')
@@ -199,120 +197,76 @@ serve(async (req) => {
         .single();
 
       if (defaultDomain) {
-        const username = generateUsername(user.email!, user.user_metadata);
-        fromEmail = `${username}@${defaultDomain.domain}`;
+        fromEmail = `${generateUsername(user.email!, user.user_metadata)}@${defaultDomain.domain}`;
         console.log(`✅ Found default verified custom domain: ${defaultDomain.domain}`);
       }
     }
 
-    // Fallback to shared domain
     if (!fromEmail) {
-      const username = generateUsername(user.email!, user.user_metadata);
-      fromEmail = `${username}@${SHARED_SENDING_DOMAIN}`;
-      console.log(`📧 Using shared domain sender: ${fromEmail}`);
+      fromEmail = `${generateUsername(user.email!, user.user_metadata)}@${SHARED_SENDING_DOMAIN}`;
+      console.log(`📧 Using shared domain: ${fromEmail}`);
     }
 
-    console.log(`📤 Final Sender: ${fromName} <${fromEmail}>`);
-    console.log(`📨 Reply-To: ${reply_to || user.email}`);
-
-    // ========================================================================
-    // 🔐 GENERATE UNSUBSCRIBE TOKEN
-    // ========================================================================
+    // =========================================================================
+    // GENERATE UNSUBSCRIBE URL
+    // Points directly to the Supabase Edge Function — no React page needed
+    // =========================================================================
     let unsubscribeUrl = '';
-    
+
     if (contact_id && campaign_id) {
       try {
-        const unsubscribeToken = await generateUnsubscribeToken(
+        unsubscribeUrl = await generateUnsubscribeUrl(
           contact_id,
           campaign_id,
           UNSUBSCRIBE_TOKEN_SECRET
         );
-        unsubscribeUrl = `${APP_URL}/unsubscribe?token=${unsubscribeToken}`;
-        console.log(`🔗 Generated unsubscribe URL for contact ${contact_id}`);
-        console.log(`   URL: ${unsubscribeUrl.substring(0, 60)}...`);
+        console.log(`🔗 Unsubscribe URL generated (direct to Edge Function)`);
       } catch (error) {
-        console.error('⚠️ Failed to generate unsubscribe token:', error);
-        // Continue without unsubscribe link - better than failing the send
+        console.error('⚠️ Failed to generate unsubscribe URL:', error);
       }
     } else {
-      console.warn('⚠️ Missing contact_id or campaign_id - cannot generate unsubscribe link');
+      console.warn('⚠️ Missing contact_id or campaign_id — no unsubscribe link');
     }
 
-    // ========================================================================
-    // 📝 DEBUG: CHECK ORIGINAL HTML
-    // ========================================================================
-    console.log('\n🔍 PRE-PERSONALIZATION DEBUG:');
-    console.log(`   Original HTML contains {{UNSUBSCRIBE_URL}}: ${html.includes('{{UNSUBSCRIBE_URL}}')} `);
-    console.log(`   Original HTML length: ${html.length} characters`);
-
-    // ========================================================================
-    // 📝 APPLY PERSONALIZATION WITH UNSUBSCRIBE URL
-    // ========================================================================
-    const enhancedPersonalization = {
+    // =========================================================================
+    // APPLY PERSONALIZATION
+    // =========================================================================
+    const mergeFields = {
       first_name: personalization.first_name || 'there',
       last_name: personalization.last_name || '',
       email: to,
       company: personalization.company || '',
       ...personalization,
-      // System merge tags - CRITICAL: These must be here
       UNSUBSCRIBE_URL: unsubscribeUrl,
-      VIEW_IN_BROWSER_URL: `${APP_URL}/campaigns/${campaign_id || 'view'}`,
+      VIEW_IN_BROWSER_URL: `${SUPABASE_URL}/functions/v1/view-email?campaign_id=${campaign_id || ''}`,
       FROM_EMAIL: fromEmail,
       COMPANY_NAME: fromName,
       CURRENT_YEAR: new Date().getFullYear().toString()
     };
 
-    console.log('\n🔧 PERSONALIZATION DATA:');
-    console.log(`   UNSUBSCRIBE_URL value: ${enhancedPersonalization.UNSUBSCRIBE_URL || '(empty)'}`);
-    console.log(`   Total merge fields: ${Object.keys(enhancedPersonalization).length}`);
+    const personalizedHtml = replacePersonalizationFields(html, mergeFields);
+    const personalizedText = text ? replacePersonalizationFields(text, mergeFields) : '';
+    const personalizedSubject = replacePersonalizationFields(subject, mergeFields);
 
-    // Replace merge tags
-    const personalizedHtml = replacePersonalizationFields(html, enhancedPersonalization);
-    const personalizedText = text ? replacePersonalizationFields(text, enhancedPersonalization) : '';
-    const personalizedSubject = replacePersonalizationFields(subject, enhancedPersonalization);
+    // Verify replacement worked
+    const hasUnsubscribeTag = personalizedHtml.includes('{{UNSUBSCRIBE_URL}}');
+    const hasActualUrl = unsubscribeUrl ? personalizedHtml.includes(unsubscribeUrl) : false;
 
-    // ========================================================================
-    // 🔍 DEBUG: VERIFY REPLACEMENT WORKED
-    // ========================================================================
-    console.log('\n🔍 POST-PERSONALIZATION DEBUG:');
-    console.log(`   Personalized HTML length: ${personalizedHtml.length} characters`);
-    console.log(`   Contains {{UNSUBSCRIBE_URL}} (should be false): ${personalizedHtml.includes('{{UNSUBSCRIBE_URL}}')} `);
-    
-    if (unsubscribeUrl) {
-      const hasActualUrl = personalizedHtml.includes(unsubscribeUrl);
-      console.log(`   Contains actual unsubscribe URL (should be true): ${hasActualUrl}`);
-      
-      if (hasActualUrl) {
-        console.log('✅ SUCCESS: Unsubscribe URL successfully injected into email HTML');
-      } else if (personalizedHtml.includes('{{UNSUBSCRIBE_URL}}')) {
-        console.error('❌ CRITICAL ERROR: {{UNSUBSCRIBE_URL}} merge tag was NOT replaced!');
-        console.error('   This means the replacePersonalizationFields function is not working correctly');
-      } else {
-        console.warn('⚠️ Warning: Email does not contain unsubscribe link (CAN-SPAM violation risk)');
-        console.warn('   The template may not have {{UNSUBSCRIBE_URL}} placeholder');
-      }
-    } else {
-      console.warn('⚠️ No unsubscribe URL generated - skipping validation');
+    console.log(`\n🔍 Merge tag check:`);
+    console.log(`   {{UNSUBSCRIBE_URL}} still present (should be false): ${hasUnsubscribeTag}`);
+    console.log(`   Actual URL injected (should be true): ${hasActualUrl}`);
+
+    if (hasUnsubscribeTag) {
+      console.error('❌ CRITICAL: {{UNSUBSCRIBE_URL}} was NOT replaced — template may be missing the tag');
     }
 
-    // ========================================================================
-    // 📦 BUILD SENDGRID PAYLOAD WITH customArgs
-    // ========================================================================
+    // =========================================================================
+    // BUILD SENDGRID PAYLOAD
+    // =========================================================================
     const sendGridPayload: any = {
-      personalizations: [
-        {
-          to: [{ email: to }],
-          subject: personalizedSubject
-        }
-      ],
-      from: {
-        email: fromEmail,
-        name: fromName
-      },
-      reply_to: {
-        email: reply_to || user.email!
-      },
-      // 🔥 customArgs for webhook tracking
+      personalizations: [{ to: [{ email: to }], subject: personalizedSubject }],
+      from: { email: fromEmail, name: fromName },
+      reply_to: { email: reply_to || user.email! },
       custom_args: {
         campaign_id: campaign_id || '',
         contact_id: contact_id || '',
@@ -323,34 +277,19 @@ serve(async (req) => {
         open_tracking: { enable: true },
         subscription_tracking: { enable: false }
       },
-      content: [
-        {
-          type: 'text/html',
-          value: personalizedHtml
-        }
-      ]
+      content: [{ type: 'text/html', value: personalizedHtml }]
     };
 
-    // Add plain text if provided
     if (personalizedText) {
-      sendGridPayload.content.unshift({
-        type: 'text/plain',
-        value: personalizedText
-      });
+      sendGridPayload.content.unshift({ type: 'text/plain', value: personalizedText });
     }
 
-    // 📊 CRITICAL LOGGING: Show what we're sending to SendGrid
-    console.log('\n📦 SendGrid Payload Details:');
-    console.log(`   To: ${to}`);
-    console.log(`   From: ${fromEmail}`);
-    console.log(`   Subject: ${personalizedSubject}`);
-    console.log(`   Custom Args:`, JSON.stringify(sendGridPayload.custom_args, null, 2));
-    console.log(`   Tracking Enabled: Opens=${sendGridPayload.tracking_settings.open_tracking.enable}, Clicks=${sendGridPayload.tracking_settings.click_tracking.enable}`);
-    console.log(`   Unsubscribe Link: ${unsubscribeUrl ? '✅ Included' : '❌ Missing'}`);
+    console.log(`\n📦 Sending to: ${to} from: ${fromEmail}`);
+    console.log(`   Unsubscribe: ${unsubscribeUrl ? '✅ included' : '❌ missing'}`);
 
-    // Send via SendGrid
-    console.log('\n📮 Sending email via SendGrid...');
-    
+    // =========================================================================
+    // SEND VIA SENDGRID
+    // =========================================================================
     const sendGridResponse = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: {
@@ -366,62 +305,19 @@ serve(async (req) => {
       throw new Error(`SendGrid error: ${errorText}`);
     }
 
-    // Get message ID from response headers
     const messageId = sendGridResponse.headers.get('x-message-id');
-    console.log(`✅ Email sent successfully! Message ID: ${messageId}`);
-
-    // Log campaign activity if IDs provided
-    if (campaign_id && contact_id) {
-      try {
-        await supabase
-          .from('email_events')
-          .insert({
-            campaign_id,
-            contact_id,
-            email: to,
-            event_type: 'processed',
-            timestamp: new Date().toISOString(),
-            metadata: {
-              sendgrid_message_id: messageId,
-              from_email: fromEmail,
-              has_unsubscribe_link: !!unsubscribeUrl
-            }
-          });
-        console.log('📊 Activity logged to email_events');
-      } catch (logError) {
-        console.warn('⚠️ Failed to log activity:', logError);
-        // Don't fail the request if logging fails
-      }
-    }
-
-    console.log('\n' + '='.repeat(80) + '\n');
+    console.log(`\n✅ Email sent! Message ID: ${messageId}`);
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        message_id: messageId,
-        sender: { email: fromEmail, name: fromName },
-        has_unsubscribe_link: !!unsubscribeUrl
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200
-      }
+      JSON.stringify({ success: true, message_id: messageId }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error: any) {
-    console.error('❌ Error sending email:', error.message);
-    console.error('Stack:', error.stack);
-    
+    console.error('❌ Send email error:', error.message);
     return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400
-      }
+      JSON.stringify({ success: false, error: error.message }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
