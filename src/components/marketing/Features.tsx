@@ -1,3 +1,14 @@
+/**
+ * ============================================================================
+ * FEATURES COMPONENT
+ * ============================================================================
+ * 
+ * Landing page features grid showcasing platform capabilities.
+ * Reduced top padding to sit closer to the Hero section logo box.
+ * 
+ * ============================================================================
+ */
+
 import { Bot, BarChart3, Users, Zap, Palette, Globe } from 'lucide-react';
 
 const features = [
@@ -35,7 +46,7 @@ const features = [
 
 export const Features = () => {
   return (
-    <section id="features" className="py-20 sm:py-32 bg-white">
+    <section id="features" className="pt-12 pb-20 sm:pt-16 sm:pb-32 bg-white">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-3xl mx-auto mb-16">
           <h2 className="text-4xl sm:text-5xl font-serif font-bold mb-6">
