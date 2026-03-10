@@ -105,6 +105,29 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
     });
   };
 
+  /**
+   * Deduplicates a contacts array by email address (case-insensitive).
+   * When the CSV contains duplicate emails, the LAST occurrence wins so that
+   * the most recently defined row takes precedence.
+   *
+   * This prevents the PostgreSQL error:
+   *   "ON CONFLICT DO UPDATE command cannot affect a row a second time"
+   * which fires when a single batch upsert contains two rows targeting the same
+   * unique key (organization + email).
+   *
+   * @param contacts - Raw mapped contact objects, each guaranteed to have an `email` field
+   * @returns Deduplicated array with one entry per unique email
+   */
+  const deduplicateByEmail = (contacts: any[]): any[] => {
+    const seen = new Map<string, any>();
+    for (const contact of contacts) {
+      // Normalize to lowercase so "John@Example.com" and "john@example.com" collapse to one
+      const key = contact.email.trim().toLowerCase();
+      seen.set(key, { ...contact, email: key });
+    }
+    return Array.from(seen.values());
+  };
+
   const handleImport = async () => {
     if (!user) {
       toast.error('You must be logged in to import contacts');
@@ -169,13 +192,24 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
         return;
       }
 
-      console.log(`Preparing to import ${contacts.length} contacts...`);
+      // Deduplicate within the CSV itself before hitting the database.
+      // PostgreSQL's ON CONFLICT DO UPDATE cannot target the same row twice in a
+      // single statement — if the CSV has duplicate emails this would throw:
+      //   "ON CONFLICT DO UPDATE command cannot affect a row a second time"
+      const uniqueContacts = deduplicateByEmail(contacts);
+      const duplicatesRemoved = contacts.length - uniqueContacts.length;
+
+      if (duplicatesRemoved > 0) {
+        console.log(`Removed ${duplicatesRemoved} duplicate email(s) from import batch`);
+      }
+
+      console.log(`Preparing to import ${uniqueContacts.length} unique contacts...`);
 
       // Step 3: Insert contacts with proper upsert logic
       try {
         const { data: insertedContacts, error: contactError } = await supabase
           .from('contacts')
-          .upsert(contacts, { 
+          .upsert(uniqueContacts, { 
             onConflict: 'user_id,email',
             ignoreDuplicates: false // Update existing records instead of ignoring
           })
@@ -186,12 +220,13 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
           throw new Error(`Failed to import contacts: ${contactError.message}`);
         }
 
-        if (!insertedContacts || insertedContacts.length === 0) {
-          throw new Error('No contacts were imported. They may already exist.');
-        }
+        // insertedContacts can be empty when every row already existed and was
+        // updated rather than inserted — this is a successful upsert, not a failure.
+        const count = insertedContacts?.length ?? uniqueContacts.length;
+        const dupeNote = duplicatesRemoved > 0 ? ` (${duplicatesRemoved} duplicate email${duplicatesRemoved !== 1 ? 's' : ''} skipped)` : '';
 
-        console.log(`Successfully imported ${insertedContacts.length} contacts`);
-        toast.success(`Imported ${insertedContacts.length} contacts successfully!`);
+        console.log(`Successfully upserted ${count} contacts`);
+        toast.success(`Imported ${count} contact${count !== 1 ? 's' : ''} successfully!${dupeNote}`);
 
         // Step 4: Add to group if specified (non-fatal)
         if (groupId && insertedContacts && insertedContacts.length > 0) {
@@ -259,13 +294,28 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
   // Validate email column is mapped
   const isEmailMapped = Object.values(columnMapping).includes('email');
 
-  // Calculate valid rows
+  // Calculate valid rows (have an email value)
   const validRows = csvData.filter(row => {
     const emailColumn = Object.keys(columnMapping).find(k => columnMapping[k] === 'email');
     return emailColumn && row[emailColumn]?.trim();
   }).length;
 
   const invalidRows = csvData.length - validRows;
+
+  // Calculate unique emails to give an accurate preview of what will actually be upserted.
+  // Duplicates within the CSV are collapsed by deduplicateByEmail at import time.
+  const uniqueValidRows = (() => {
+    const emailColumn = Object.keys(columnMapping).find(k => columnMapping[k] === 'email');
+    if (!emailColumn) return 0;
+    const seen = new Set<string>();
+    csvData.forEach(row => {
+      const email = row[emailColumn]?.trim().toLowerCase();
+      if (email) seen.add(email);
+    });
+    return seen.size;
+  })();
+
+  const duplicateRowsInCSV = validRows - uniqueValidRows;
 
   return (
     <Modal isOpen={isOpen} onClose={handleCloseModal} title="Import Contacts from CSV" maxWidth="2xl">
@@ -476,8 +526,14 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-600">Valid contacts (with email):</span>
-                <span className="text-sm font-semibold text-green-600">{validRows}</span>
+                <span className="text-sm font-semibold text-green-600">{uniqueValidRows}</span>
               </div>
+              {duplicateRowsInCSV > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">Duplicate emails in CSV:</span>
+                  <span className="text-sm font-semibold text-yellow-600">{duplicateRowsInCSV}</span>
+                </div>
+              )}
               {invalidRows > 0 && (
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Invalid rows (no email):</span>
@@ -493,6 +549,14 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
                 </span>
               </div>
             </div>
+
+            {duplicateRowsInCSV > 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-sm text-yellow-800">
+                  ⚠ {duplicateRowsInCSV} duplicate email{duplicateRowsInCSV !== 1 ? 's' : ''} found in your CSV. Only the last occurrence of each duplicate will be imported.
+                </p>
+              </div>
+            )}
 
             {invalidRows > 0 && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -570,9 +634,9 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
                 variant="primary"
                 onClick={handleImport}
                 loading={importing}
-                disabled={importing || validRows === 0}
+                disabled={importing || uniqueValidRows === 0}
               >
-                {importing ? 'Importing...' : `Import ${validRows} Contact${validRows !== 1 ? 's' : ''}`}
+                {importing ? 'Importing...' : `Import ${uniqueValidRows} Contact${uniqueValidRows !== 1 ? 's' : ''}`}
               </Button>
             )}
           </div>
